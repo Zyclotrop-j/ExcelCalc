@@ -8,10 +8,10 @@ A Grammar + collection of functions to parse excel-like expressions.
 parse(`27`)
 parse(`Hello`)
 parse("=1+2")
-parse(`=A1&" foo"`)
-parse(`=SUM(1,2,A1:A27)`)
-parse(`=VLOOKUP(H2,A1:C100,2)`)
-parse(`=VLOOKUP(A1&" foo",A1:C100,SUM(1,2,A1:A27))`)
+parse(`=A2&" foo"`)
+parse(`=SUM(1,2,B1:B2)`)
+parse(`=VLOOKUP(A2,{1,2,3;"A","B","C"},2)`)
+parse(`=VLOOKUP(A2&" foo",A2:C100,SUM(1,2,A2:A27))`)
 ```
 
 Try it now:
