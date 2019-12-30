@@ -14,6 +14,11 @@ parse(`=VLOOKUP(H2,A1:C100,2)`)
 parse(`=VLOOKUP(A1&" foo",A1:C100,SUM(1,2,A1:A27))`)
 ```
 
+Try it now:
+(1) Grap the content of Grammar.peg
+(2) Go to https://pegjs.org/online
+(3) Paste the Grammar into [1]
+
 More to come...
 
 
