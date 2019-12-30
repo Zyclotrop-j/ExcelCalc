@@ -15,10 +15,12 @@ parse(`=VLOOKUP(A1&" foo",A1:C100,SUM(1,2,A1:A27))`)
 ```
 
 Try it now:
-(1) Grap the content of Grammar.peg
-(2) Go to https://pegjs.org/online
-(3) Paste the Grammar into [1]
 
-More to come...
+1. Go to https://pegjs.org/online
+2. Paste the content of grammar.peg into field [1] overwriting the default calculator code in there
+3. Type an Excel-like formula into [2] and observe the output
+
+
+## More to come...
 
 
