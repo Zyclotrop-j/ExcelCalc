@@ -1,7 +1,7 @@
-// Simple Arithmetics Grammar
+// Excel-calc Grammar
 // ==========================
 //
-// Accepts expressions like "2 * (3 + 4)" and computes their value.
+// Accepts expressions like "=2 * (3 + 4)" or "=SUM(A2,27)" and computes their value.
 
 {
 	let Symbol = i => i;
