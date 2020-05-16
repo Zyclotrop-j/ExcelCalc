@@ -35,7 +35,6 @@ import {
   HIDDEN,
   NATURALREF,
   CIRCULAR,
-  CC2Currency
 } from "./types";
 
 export default /*
@@ -257,11 +256,10 @@ export default /*
         peg$c44 = "}",
         peg$c45 = peg$literalExpectation("}", false),
         peg$c46 = function(inner, rows) {
-            const Cell_Trace = inner.map(i => i[CELL_TRACE] || []);
             if(!rows.length) {
-            	return { type: LIST, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+            	return { type: LIST, value: inner, meta: { type: INLINE } };
             }
-        	return { type: MATRIX, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+        	return { type: MATRIX, value: [inner, ...rows], meta: { type: INLINE } };
         },
         peg$c47 = ",",
         peg$c48 = peg$literalExpectation(",", false),
@@ -274,10 +272,10 @@ export default /*
         peg$c55 = function(expr) { return expr; },
         peg$c56 = "TRUE",
         peg$c57 = peg$literalExpectation("TRUE", false),
-        peg$c58 = function() { return { type: BOOLEAN, value: true, [CELL_TRACE]: [] } },
+        peg$c58 = function() { return { type: BOOLEAN, value: true } },
         peg$c59 = "FALSE",
         peg$c60 = peg$literalExpectation("FALSE", false),
-        peg$c61 = function() { return { type: BOOLEAN, value: false, [CELL_TRACE]: [] } },
+        peg$c61 = function() { return { type: BOOLEAN, value: false } },
         peg$c62 = /^[a-zA-Z]/,
         peg$c63 = peg$classExpectation([["a", "z"], ["A", "Z"]], false, false),
         peg$c64 = /^[a-zA-Z0-9_]/,
@@ -359,13 +357,11 @@ export default /*
             }
             const carg = { ...locx, row: r-1, col: c-1, type: NATURALREF };
             const v = contextu.getRow(r-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
-            const inheritedCellTrace = v[CELL_TRACE] || [];
             return {
             	...v,
             	type: v.type,
                 meta: { ...locx, type: CELL, row: r, col: c, absrow: row.absolute, abscol: col.absolute, notation: "R1C1" },
                 value: v.value,
-                [CELL_TRACE]: inheritedCellTrace.concat([{row: row, col: c}]),
             };
         },
         peg$c105 = function() { return parseInt(text(), 10); },
@@ -389,25 +385,23 @@ export default /*
                     contextu = contextu.getWorkbook(locx.sheet);
                 }
                 const meta = { ...locx, type: NATURALREF };
-              const results = [];
-              const cellTrace = []
+            	const results = [];
             	for(var row = start.meta.row; row <= end.meta.row; row++) {
                   const t = [];
                   for(var col = start.meta.col; col <= end.meta.col; col++) {
                       const v = contextu.getRow(row-1,{...meta, row: row-1, col: col-1}).getCol(col-1,{...meta, row: row-1, col: col-1}) || { value: null, type: "ERROR" };
-                      cellTrace.push(...(v[CELL_TRACE] || []));
                       t.push({ ...v, meta: { ...locx, type: CELL, row, col } });
                   }
                   results.push(t);
                 }
                 
                 if(results.length === 1) {
-                	return { type: LIST, value: results[0], meta, [CELL_TRACE]: cellTrace }
+                	return { type: LIST, value: results[0], meta }
                 }
                 if(results.every(r => r.length === 1)) {
-                	return { type: LIST, value: results.map(i => i[0]), meta, [CELL_TRACE]: cellTrace }
+                	return { type: LIST, value: results.map(i => i[0]), meta }
                 }
-                return { type: MATRIX, value: results, meta, [CELL_TRACE]: cellTrace }
+                return { type: MATRIX, value: results, meta }
             },
         peg$c111 = function(arg0, y) { return y; },
         peg$c112 = function(arg0) { return { type: NULL, value: undefined } },
@@ -422,11 +416,11 @@ export default /*
         peg$c121 = function(name, arg0, args) {
         	if(functions[name]) {
             	const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
-                const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
+                const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE]), []);
                 try {
                 	const func = functions[name];
                     
-                	const v = func(allargs, { ...ctx, currentcell, name, raw: text(), allowUnsafe, functions, table: context, parser: parser, [CELL_TRACE]: cellTrace });
+                	const v = func(allargs, { ...ctx, name, raw: text(), functions, table: context, parser: parser, [CELL_TRACE]: cellTrace });
                     if(!v) {
                     	throw new Error("Function '"+name+"' did not return a result! Check the implementation!");
                     }
@@ -434,7 +428,7 @@ export default /*
                         function: name,
                     	arguments: allargs
                     };
-                    v[CELL_TRACE] = cellTrace.concat(v[CELL_TRACE] || []);
+                    v[CELL_TRACE] = cellTrace;
                     return v;
                 } catch(e) {
                 	const initialError = allargs.find((e) => e && (e.type === ERROR));
@@ -459,13 +453,10 @@ export default /*
             if(a.type !== LIST || b.type !== LIST) {
             	throw new Error("An intersection between anything else but LISTs is currently not supported. Expected LIST, LIST, found "+a.type+", "+b.type); 
             }
-            const v = a.value.filter(i => b.value.some(j => j.meta.row === i.meta.row && j.meta.col === i.meta.col));
-            const cellTrace = [].concat(...v.map(i => i[CELL_TRACE] || []));
             return {
             	type: LIST,
-              value: v,
-              meta: { type: NATURALREF },
-              [CELL_TRACE]: cellTrace
+            	value: a.value.filter(i => b.value.some(j => j.meta.row === i.meta.row && j.meta.col === i.meta.col)),
+                meta: { type: NATURALREF },
             }
         },
         peg$c125 = function(loc) { return text(); },
@@ -485,9 +476,8 @@ export default /*
                 }
                 const c = start.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
                 const meta = { ...locx, type: NATURALREF };
-                const v = contextu.getCol(c-1,meta).all({ col: c-1 }, meta);
-                const cellTrace = [{ col: c, row: "*" }].concat(...v.map(i => i[CELL_TRACE] || []));
-                return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+                return { type: LIST, value: contextu.getCol(c-1,meta).all({ col: c-1 },meta), meta };
+                
             },
         peg$c128 = function(loc, start, end) {
             	if(start !== end) {
@@ -504,9 +494,7 @@ export default /*
                 }
                 const r = parseInt(start, 10);
                 const meta = { ...contextu, type: NATURALREF };
-                const v = contextu.getRow(r-1,meta).all({ row: r-1 },meta);
-                const cellTrace = [{ row: r, col: "*" }].concat(...v.map(i => i[CELL_TRACE] || []));
-                return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+                return { type: LIST, value: contextu.getRow(r-1,meta).all({ row: r-1 },meta), meta };
             },
         peg$c129 = function(x) { return x; },
         peg$c130 = function(unsafestart, unsafeend) {
@@ -529,14 +517,11 @@ export default /*
                     contextu = contextu.getWorkbook(start.meta.sheet);
                     loc.sheet = start.meta.sheet; // Avoid keys with undefined values
                 }
-                const cellTrace = [];
-         		  let circularFlag = false;
+         		let circularFlag = false;
             	for(let row = start.meta.row; row <= end.meta.row; row++) {
                   const t = [];
                   for(let col = start.meta.col; col <= end.meta.col; col++) {
                       const v = contextu.getRow(row-1, {...loc,type: NATURALREF}).getCol(col-1, {...loc,type: NATURALREF}) || { value: null, type: "ERROR" };
-                      cellTrace.push(...(v[CELL_TRACE] || []));
-                      cellTrace.push({ row, col })
                       if(v.type === ERROR && v.value === CIRCULAR) {
                       	circularFlag = true;
                       }
@@ -547,36 +532,35 @@ export default /*
                 }
                 
                 if(results.length === 1) {
-                  const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
-                  if(circularFlag) {
-                        return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                	const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF } };
+                	if(circularFlag) {
+                        return { type: ERROR, value: CIRCULAR, meta: result };
                     }
-                  return result;
+                	return result;
                 }
                 if(results.every(r => r.length === 1)) {
-                  const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
-                  if(circularFlag) {
-                        return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                	const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF } };
+                	if(circularFlag) {
+                        return { type: ERROR, value: CIRCULAR, meta: result };
                     }
-                  return result;
+                	return result;
                 }
                 const result = {
-                  type: MATRIX,
+                	type: MATRIX,
                     value: results,
                     get rowspan() { return results.length }, 
                     get colspan() { return results[0].length },
                     meta: { ...loc, type: NATURALREF },
-                    [CELL_TRACE]: cellTrace
                };
                if(unsafestart.type === ERROR && unsafestart.value === CIRCULAR) {
-                  return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                	return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result };
                 }
                if(circularFlag) {
-                 return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+               	return { type: ERROR, value: CIRCULAR, meta: result };
                }
                
                 if(unsafeend.type === ERROR && unsafeend.value === CIRCULAR) {
-                  return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                	return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result };
                 }
                 return result;
             },
@@ -745,12 +729,9 @@ export default /*
       if (s0 === peg$FAILED) {
         s0 = peg$parseEscaped();
         if (s0 === peg$FAILED) {
-          s0 = peg$parseNum();
+          s0 = peg$parseStatic();
           if (s0 === peg$FAILED) {
-            s0 = peg$parseStatic();
-            if (s0 === peg$FAILED) {
-              s0 = peg$parseEmpty();
-            }
+            s0 = peg$parseEmpty();
           }
         }
       }
@@ -843,9 +824,6 @@ export default /*
       }
       if (s1 !== peg$FAILED) {
         s2 = peg$parseString();
-        if (s2 === peg$FAILED) {
-          s2 = null;
-        }
         if (s2 !== peg$FAILED) {
           peg$savedPos = s0;
           s1 = peg$c10();
@@ -3702,16 +3680,6 @@ export default /*
         const stdop = (a,b,op,returntype,operation) => {
         	const {value:left,type:tleft,meta:{type:lstype}={}} = a;
             const {value:right,type:tright,meta:{type:rstype}={}} = b;
-            if(tleft === ERROR) {
-                const e = new Error(left.description);
-                e.value = a;
-                throw e;
-            }
-            if(tright === ERROR) {
-                const e = new Error(right.description);
-                e.value = b;
-                throw e;
-            }
             const Cell_Trace = [...(a[CELL_TRACE] || []),...(b[CELL_TRACE] || [])];
             const meta = {
             	left: a.meta||{},
@@ -3768,14 +3736,30 @@ export default /*
             	return { ...a, ...b, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
         };
         
+        const BESSEL = {
+        	/* todo: get from https://github.com/SheetJS/bessel */
+            /* or maybe require( '@stdlib/math/base/special/besselj0' );? */
+        };
+        
+        
         const functions = functionDefinitions;
         
-        // dynamic, from the outside
-    	let xcontext = options._context;
-        let currentcell = options._currentcell;
-        let calledBy = options._calledBy || [];
-        let parser = options._self;
-        const allowUnsafe = options.allowUnsafe || false;
+      // dynamic, from the outside
+      // let _context = options._context;
+      /*
+      [
+        [{ type: NUMBER, value: 1, formula: "" }, { type: NUMBER, value: 2, formula: "" }],
+        [{ type: NUMBER, value: 3, formula: "" }, { type: NUMBER, value: 4, formula: "" }]
+      ]
+      */
+      let xcontext = options._context; /*{
+      getCell: ({ row, col }) => _context[row] && _context[row][col],
+        getRow: (row) => ({ getCol: (col) => _context[row] && _context[row][col], all: () => _context[row] }),
+          getCol: (col) => ({ getRow: (row) => _context[row] && _context[row][col], all: () => _context.map(i => i[col]) })
+      };*/
+      let currentcell = options._currentcell; //{ row: 0, col: 0 };
+      let calledBy = options._calledBy; //[];
+      let parser = options._self; //(arg) => ({ type: ERROR, value: "NOT AVAILABLE IN DEVELOPMENT", meta: { arg } });
         
     	// static, internal
         const ccd= calledBy.concat([currentcell]);

@@ -1,0 +1,22 @@
+{
+  "name": "excelcalc",
+  "version": "1.0.0",
+  "description": "A table utility and excel-like-expression-parser",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zyclotrop-j/ExcelCalc.git"
+  },
+  "keywords": [
+    "excel", "table", "spreadsheet", "formula", "parser", "peg"
+  ],
+  "author": "Jannes Mingram <zyclotrop.j@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Zyclotrop-j/ExcelCalc/issues"
+  },
+  "homepage": "https://github.com/Zyclotrop-j/ExcelCalc#readme"
+}

@@ -16,9 +16,11 @@ parse(`=VLOOKUP(A2&" foo",A2:C100,SUM(1,2,A2:A27))`)
 
 Try it now:
 
-1. Go to https://pegjs.org/online
-2. Paste the content of grammar.peg into field [1] overwriting the default calculator code in there
-3. Type an Excel-like formula into [2] and observe the output
+1. Download the repo
+2. Go to Demo & run 'npm install'
+3. Run 'npm run dev'
+4. Open your browser at (http://localhost:5000/)[http://localhost:5000/]
+5. Play with the table
 
 
 ## More to come...
