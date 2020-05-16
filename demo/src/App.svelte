@@ -1,7 +1,7 @@
 <script>
 	import Cell from './Cell.svelte';
 
-	const tableSize = { width: 3, height: 3 };
+	const tableSize = { width: 24, height: 100 };
 	
 </script>
 
@@ -37,6 +37,16 @@
 		padding: 1em;
 		max-width: 240px;
 		margin: 0 auto;
+	}
+	table {
+		border-spacing: 0px;
+	}
+	table th, table td {
+		padding: 0;
+		margin: 0;
+		width: 100%;
+		border: 0.5px solid gray;
+		height: 33px;
 	}
 
 	h1 {

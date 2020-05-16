@@ -24,13 +24,6 @@ export default {
 			css: css => {
 				css.write('public/build/bundle.css');
 			},
-			// By default, the client-side compiler is used. You
-			// can also use the server-side rendering compiler
-			generate: 'ssr',
-
-			// ensure that extra attributes are added to head
-			// elements for hydration (used with ssr: true)
-			hydratable: true,
 			preprocess: autoPreprocess()
 		}),
 

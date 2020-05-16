@@ -29,6 +29,13 @@
 
 <style type="text/scss">
     .cell {
+        $w: 8rem;
+        width: $w;
+        > input {
+            width: $w;
+            margin: 0;
+            border: none;
+        }
         position: relative;
         & > input.value {
             opacity: 1;
