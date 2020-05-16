@@ -456,7 +456,6 @@ const functions = {
       return { type: NUMBER, value: result };
     },
     AVERAGE: (allargs, context) => {
-        console.log("allargs", allargs);
       const [result,ccount] = allargs.reduce(([sum,count], { value, type }) => {
           switch(type) {
               case NULL:
@@ -818,7 +817,6 @@ const functions = {
        };
     },
     TRANSPOSE: ([array], _context) => {
-        console.log("array", array);
         const { col: ccol, row: crow } = _context.currentcell;
         if(array.type === LIST) {
             return {
@@ -1503,7 +1501,6 @@ const functions = {
     BITRSHIFT: ([{value:a},{value:b}]) => ({ type: NUMBER, value: a >> b  }),
     BITXOR: ([{value:a},{value:b}]) => ({ type: NUMBER, value: a ^ b  }),
     CALL: ([{value:f,type}, ...args], _context) => {
-        console.log(_context);
         if(!_context.allowUnsafe) {
             throw new Error("[SECURITY VIOLATION] Attempted to call 'call', but 'allowUnsafe'-option is not true");
         }
@@ -1696,7 +1693,6 @@ const functions = {
               });
               return [r, prefixes[ip] || 1, ip || ""]
             });
-            console.log("xfrom, yfrom", xfrom, yfrom)
             if(xfrom && yfrom) {
                 // return n * cat[xfrom] * xp / cat[yfrom] / yp;
                 return [cat[xfrom] / cat[yfrom] * xp / yp * n, xp, yp, xp2, yp2];
@@ -1722,7 +1718,6 @@ const functions = {
             "Weight and mass": weight
         }).find(([__, cat]) => {
             const r = matchCat(cat);
-            console.log("r",r);
             const [u] = r;
             if(u) {
                 result = r; // save the value
@@ -2195,7 +2190,6 @@ const functions = {
             try {
                 const expression = evaluator.createExpression(xpath);
                 const result = expression.evaluate(oDOM, xpathtype);
-                console.log(result, xpath, oDOM, xml)
                 return { type: type, value: result[field],  /*meta: { result }*/ }
             } catch(e) {
                 return { type: ERROR, result: VVALUE, meta: { error: e } };
@@ -3227,7 +3221,6 @@ const functions = {
           for(let j = 0; j < c.length; j++) {
               let sum = 0;
             for(let t = 0; t < k; t++) {
-                console.log(i,k,j,b,c,b[i][t],c[t][j]);
                 const {value:x,type:xt} = b[i][t];
                 if(xt !== NUMBER) {
                     return {
@@ -4304,10 +4297,8 @@ const functions = {
             case NUMBER:
             case STRING:
             case BOOLEAN:
-                console.log("!",sum,value);
                 return [...sum,value];
             case LIST:
-                console.log("!",sum,value);
                 const {list:s} = context.functions.TEXTJOIN([{value:delimiter},{value:ignore_empty},...value], context).meta;
                 return [...sum,...s];
             default:
@@ -4340,7 +4331,6 @@ const functions = {
     TRIMMEAN: ([{value:arr},{value:perc}],context) => {
         const excludes = Math.round(arr.length * perc / 2);
         const narr = arr.sort(({value:a},{value:b}) => b-a).slice(excludes, -excludes);
-        console.log(arr.length,perc,arr.length * perc, excludes,narr);
         return context.functions.AVERAGE(narr,context);
     },
     TRUE: () => ({ type: BOOLEAN, value: true }),

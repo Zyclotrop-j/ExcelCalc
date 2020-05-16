@@ -142,7 +142,6 @@ export class Cell extends EventTarget {
             .map(({ value }) => value),
       }),
     };
-    console.log(`Updating cell ${this.name} value with `, cldby)
     const meta = {
       _context: cellFinder,
       _currentcell: { row: this.row, col: this.col }, // cell this formula is in
@@ -212,7 +211,6 @@ export class Cell extends EventTarget {
         if(evt.meta.row === this.row && evt.meta.col === this.col) { // self
             return;
         }
-        console.log(this.name, this.references)
         // if the changed cell is something that is referenced from this cell
         if(this.references.some(({ row, col }) => (row === "*" || evt.meta.row === (row-1)) && (col === "*" || (col-1) === evt.meta.col))) { // Warning: references is in 1-based format!! // todo trace in parser and correct
             if(evt.value.value === this.table.parser.CIRCULAR) {
