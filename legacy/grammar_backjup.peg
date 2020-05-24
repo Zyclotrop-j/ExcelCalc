@@ -4,7 +4,44 @@
 // Accepts expressions like "=2 * (3 + 4)" or "=SUM(A2,27)" and computes their value.
 
 {
+	let Symbol = i => i;
+	const CELL = Symbol("CELL");
+    const STR_ESCAPED = Symbol("STR_ESCAPED");
+    const STR_PLAIN = Symbol("STR_PLAIN");
+    const AGGREGATE = Symbol("AGGREGATE");
+    const SUBTOTAL = Symbol("SUBTOTAL");
+    const NUMBER = Symbol("NUMBER");
+    const COMPLEX_NUMBER = Symbol("COMPLEX_NUMBER");
+    const LIST = Symbol("LIST");
+    const MATRIX = Symbol("MATRIX");
+    const STRING = Symbol("STRING");
+    const ANY = Symbol("ANY");
+    const BOOLEAN = Symbol("BOOLEAN");
+    const FUNCTION = Symbol("FUNCTION");
+    const ARGUMENTS = Symbol("ARGUMENTS");
+    const NULL = Symbol("NULL"); // Blank cell
+    const ARRAY = Symbol("ARRAY"); // return value of a array formula aka multiple return values
+    const ERROR = Symbol("ERROR");
+    const DATE = Symbol("DATE");
+    const TIME = Symbol("TIME");
+    const DATETIME = Symbol("DATETIME");
+    const TRACE = Symbol("_TRACE");
+    const CELL_TRACE = Symbol("_CELL_TRACE");
+    const HYPERLINK = Symbol("HYPERLINK");
+    const NAVALUE = Symbol("#N/A");
+    const VVALUE = Symbol("#VALUE!");
+    const REFVALUE = Symbol("#REF!");
+    const NUMVALUE = Symbol("#NUM");
+    const DIV0 = Symbol("#DIV/0!");
+    const NULLE= Symbol("#NULL!");
+    const NAMEE = Symbol("#NAME?");
+    const GETTINGDATA= Symbol("#GETTING_DATA");
+    const INLINE = Symbol("INLINE");
+    const HIDDEN = Symbol("HIDDEN"); // cell visibility, set meta:{visibility:HIDDEN} when cell is hidden; effects some functions
+    const NATURALREF = Symbol("NATURAL_REFERENCE");
 
+    const CIRCULAR = Symbol("CIRCULAR_REFERENCE");
+    
     const stdop = (a,b,op,returntype,operation) => {
         
     	const {value:left,type:tleft,meta:{type:lstype}={}} = a;
@@ -75,122 +112,59 @@
         	return { ...a, ...b, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
     };
     
-    const functions = functionDefinitions;
+    const CC2Currency = {
+    };
+    
+    const functions = {}
+    
     // dynamic, from the outside
-    let xcontext = options._context;
-    let currentcell = options._currentcell;
-    let calledBy = options._calledBy || [];
-    let parser = options._self;
-    const allowUnsafe = options.allowUnsafe || false;
+	let _context = [
+    	[{ type: NUMBER, value: 1, formula: "" }, { type: NUMBER, value: 2, formula: "" }],
+        [{ type: NUMBER, value: 3, formula: "" }, { type: NUMBER, value: 4, formula: "" }]
+    ];
+    let xcontext = {
+		getCell: ({ row, col }) => _context[row] && _context[row][col],
+    	getRow: (row) => ({ getCol: (col) => _context[row] && _context[row][col], all: () => _context[row] }),
+        getCol: (col) => ({ getRow: (row) => _context[row] && _context[row][col], all: () => _context.map(i => i[col]) })
+    };
+    let currentcell = { row: 0, col: 0 };
+    const allowUnsafe = true;
+    let calledBy = [];
+    let parser = (arg) => ({ type: ERROR, value: "NOT AVAILABLE IN DEVELOPMENT", meta: { arg } });
     
 	// static, internal
-    const ccd = calledBy.concat([{ row: currentcell.row + 1, col: currentcell.col + 1, sheet: currentcell.sheet, workbook: currentcell.workbook }]);
+    const ccd= calledBy.concat([currentcell]);
     const ctx = { calledBy: ccd };
-
     const context = {
-    	getWorkbook: wb => {
-            const maybeWorkbook = xcontext.getWorkbook(wb)
-            return {
-                getSheet: (sh) => {
-                    const sheet = workbook.getSheet(sh);
-                    const maybeSheet = sh;
-                    return {
-                        getRow: (row, ...rest1) => ({
-                                getCol: (col, ...rest2) => {
-                                    if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
-                                        return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
-                                    }
-                                    return sheet.getRow(row, ...rest1).getCol(col, ...rest2);
-                                },
-                                all: (...rest2) => {
-                                    const find = ccd.find(({ row: r, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1));
-                                    if(find) {
-                                    return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
-                                    }
-                                    return sheet.getRow(row, ...rest1).all(...rest2);
-                                }
-                            }),
-                        getCol: (col, ...rest1) => ({
-                            getRow: (row, ...rest2) => {
-                                if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
-                                    return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
-                                }
-                                return sheet.getCol(col, ...rest1).getRow(row, ...rest2);
-                            },
-                            all: (...rest2) => {
-                                const find = ccd.find(({ col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && col === (c-1));
-                                if(find) {
-                                    return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
-                                } 
-                                return sheet.getCol(col, ...rest1).all(...rest2);
-                            }
-                        }),
-                    };
-                },
-            };
-        },
-    	getSheet: (sh, maybeWorkbook = currentcell.workbook) => {
-            const sheet = xcontext.getSheet(sh);
-            const maybeSheet = sh;
-            return {
-                getRow: (row, ...rest1) => ({
-                        getCol: (col, ...rest2) => {
-                            if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
-                                return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
-                            }
-                            return sheet.getRow(row, ...rest1).getCol(col, ...rest2);
-                        },
-                        all: (...rest2) => {
-                            const find = ccd.find(({ row: r, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1));
-                            if(find) {
-                             return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
-                            }
-                            return sheet.getRow(row, ...rest1).all(...rest2);
-                        }
-                    }),
-                getCol: (col, ...rest1) => ({
-                    getRow: (row, ...rest2) => {
-                        if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
-                            return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
-                        }
-                        return sheet.getCol(col, ...rest1).getRow(row, ...rest2);
-                    },
-                    all: (...rest2) => {
-                        const find = ccd.find(({ col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && col === (c-1));
-                        if(find) {
-                            return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
-                        } 
-                        return sheet.getCol(col, ...rest1).all(...rest2);
-                    }
-                }),
-            };
-        },
-    	getRow: (row, ctx, maybeSheet = currentcell.sheet, maybeWorkbook = currentcell.workbook) =>
+    	getWorkbook: (workbookName) => context,
+    	getSheet: (sheetName) => context,
+    	getRow: (row) => 
           ({ 
             getCol: (col) => {
-              if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
+            	
+              if(ccd.some(({ row: r, col: c }) => row === r && col === c)) {
                return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
               } 
               return xcontext.getRow(row, ctx).getCol(col, ctx)
             }, 
             all: () => {
-              const find = ccd.find(({ row: r, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1));
+              const find = ccd.find(({ row: r }) => row === r);
               if(find) {
                return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
               } 
               return xcontext.getRow(row, ctx).all(ctx);
             }
           }),
-        getCol: (col, ctx, maybeSheet = currentcell.sheet, maybeWorkbook = currentcell.workbook) => 
+        getCol: (col) => 
           ({ 
             getRow: (row) => {
-              if(ccd.some(({ row: r, col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && row === (r-1) && col === (c-1))) {
+              if(ccd.some(({ row: r, col: c }) => row === r && col === c)) {
                return { type: ERROR, value: CIRCULAR, chain: [{col, row}].concat(ccd), meta: {} };
               } 
               return xcontext.getCol(col, ctx).getRow(row, ctx);
             }, 
             all: () => {
-              const find = ccd.find(({ col: c, workbook: wb = currentcell.workbook, sheet: sh = currentcell.sheet }) => wb === maybeWorkbook && sh === maybeSheet && col === (c-1));
+              const find = ccd.find(({ col: c }) => col === c);
               if(find) {
                return { type: ERROR, value: CIRCULAR, chain: [find].concat(ccd), meta: {} };
               } 
@@ -288,7 +262,7 @@ Workbooksheetquote =
 		t2:( ("\\'" / [^'])+ { return text().replace(/\\'/g, "'"); } ) 
     "'" "!" { return { sheet: t2, workbook: t1 }  }
 Cell
-    = _ c:CellNoSpace _ { return c; }
+    = _ CellNoSpace _
 
 CellNoSpace
 	= loc:(CellSheetWorkbook)? abscol:"$"? col:[A-Z]+ absrow:"$"? row:([1-9][0-9]* { return parseInt(text(), 10); }) {
@@ -301,7 +275,7 @@ CellNoSpace
     	contextu = contextu.getWorkbook(locx.workbook);
     }
     if(locx.sheet) {
-    	contextu = contextu.getSheet(locx.sheet);
+    	contextu = contextu.getWorkbook(locx.sheet);
     }
     const carg = { ...locx, row: row-1, col: c-1, type: NATURALREF };
     const v = contextu.getRow(row-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
@@ -309,9 +283,9 @@ CellNoSpace
     const result = {
     	...v,
     	type: v.type,
-        meta: { ...locx, type: CELL, row: row, col: c, absrow: absrow === "$", abscol: abscol === "$", workbook: locx.workbook, sheet: locx.sheet },
+        meta: { ...locx, type: CELL, row: row, col: c, absrow: absrow === "$", abscol: abscol === "$" },
         value: v.value,
-        [CELL_TRACE]: inheritedCellTrace.concat([{row: row, col: c, workbook: locx.workbook, sheet: locx.sheet}]),
+        [CELL_TRACE]: inheritedCellTrace.concat([{row: row, col: c}]),
     };
     return result;
 }
@@ -329,7 +303,7 @@ R1C1Cell
     	contextu = contextu.getWorkbook(locx.workbook);
     }
     if(locx.sheet) {
-    	contextu = contextu.getSheet(locx.sheet);
+    	contextu = contextu.getWorkbook(locx.sheet);
     }
     const carg = { ...locx, row: r-1, col: c-1, type: NATURALREF };
     const v = contextu.getRow(r-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
@@ -337,9 +311,9 @@ R1C1Cell
     return {
     	...v,
     	type: v.type,
-        meta: { ...locx, type: CELL, row: r, col: c, absrow: row.absolute, abscol: col.absolute, notation: "R1C1", workbook: locx.workbook, sheet: locx.sheet },
+        meta: { ...locx, type: CELL, row: r, col: c, absrow: row.absolute, abscol: col.absolute, notation: "R1C1" },
         value: v.value,
-        [CELL_TRACE]: inheritedCellTrace.concat([{row: row, col: c, workbook: locx.workbook, sheet: locx.sheet}]),
+        [CELL_TRACE]: inheritedCellTrace.concat([{row: row, col: c}]),
     };
 }
 
@@ -359,7 +333,7 @@ FiniteRangeR1C1
             contextu = contextu.getWorkbook(locx.workbook);
         }
         if(locx.sheet) {
-            contextu = contextu.getSheet(locx.sheet);
+            contextu = contextu.getWorkbook(locx.sheet);
         }
         const meta = { ...locx, type: NATURALREF };
     	const results = [];
@@ -369,8 +343,7 @@ FiniteRangeR1C1
           for(var col = start.meta.col; col <= end.meta.col; col++) {
               const v = contextu.getRow(row-1,{...meta, row: row-1, col: col-1}).getCol(col-1,{...meta, row: row-1, col: col-1}) || { value: null, type: "ERROR" };
               cellTrace.push(...(v[CELL_TRACE] || []));
-              cellTrace.push({row: row, col: col, workbook: locx.workbook, sheet: locx.sheet});
-              t.push({ ...v, meta: { ...locx, type: CELL, row, col, workbook: locx.workbook, sheet: locx.sheet } });
+              t.push({ ...v, meta: { ...locx, type: CELL, row, col } });
           }
           results.push(t);
         }
@@ -452,12 +425,12 @@ InfiniteRangeAZ
             contextu = contextu.getWorkbook(locx.workbook);
         }
         if(locx.sheet) {
-            contextu = contextu.getSheet(locx.sheet);
+            contextu = contextu.getWorkbook(locx.sheet);
         }
         const c = start.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
-        const meta = { ...locx, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
+        const meta = { ...locx, type: NATURALREF };
         const v = contextu.getCol(c-1,meta).all({ col: c-1 }, meta);
-        const cellTrace = [{ col: c, row: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
+        const cellTrace = [{ col: c, row: "*" }].concat(...v.map(i => i[CELL_TRACE] || []));
         return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
         
     }
@@ -474,12 +447,12 @@ InfiniteRange09
             contextu = contextu.getWorkbook(locx.workbook);
         }
         if(locx.sheet) {
-            contextu = contextu.getSheet(locx.sheet);
+            contextu = contextu.getWorkbook(locx.sheet);
         }
         const r = parseInt(start, 10);
-        const meta = { ...contextu, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
+        const meta = { ...contextu, type: NATURALREF };
         const v = contextu.getRow(r-1,meta).all({ row: r-1 },meta);
-        const cellTrace = [{ row: r, col: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
+        const cellTrace = [{ row: r, col: "*" }].concat(...v.map(i => i[CELL_TRACE] || []));
         return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
     }
 
@@ -503,7 +476,7 @@ XFiniteRange
             loc.workbook = start.meta.workbook; // Avoid keys with undefined values
         }
         if(start.meta.sheet) {
-            contextu = contextu.getSheet(start.meta.sheet);
+            contextu = contextu.getWorkbook(start.meta.sheet);
             loc.sheet = start.meta.sheet; // Avoid keys with undefined values
         }
         const cellTrace = [];
@@ -513,7 +486,7 @@ XFiniteRange
           for(let col = start.meta.col; col <= end.meta.col; col++) {
               const v = contextu.getRow(row-1, {...loc,type: NATURALREF}).getCol(col-1, {...loc,type: NATURALREF}) || { value: null, type: "ERROR" };
               cellTrace.push(...(v[CELL_TRACE] || []));
-              cellTrace.push({ row, col, workbook: start.meta.workbook, sheet: start.meta.sheet });
+              cellTrace.push({ row, col });
               if(v.type === ERROR && v.value === CIRCULAR) {
               	circularFlag = true;
               }

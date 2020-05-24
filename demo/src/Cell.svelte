@@ -4,17 +4,29 @@
 
     export let col;
     export let row;
-    let cell = new Cell({ onUpdate: (__, c) => {
+    export let sheet;
+    export let workbook;
+
+    let cell;
+    const onCellUpdate = (__, c) => {
         cell = c;
-        // cell.table.parser -> has all the constants to customize errors
-        const logv = typeof cell.value.value === 'symbol' ? cell.value.value.toString() : cell.value.value;
-        console.log(`Cell ${row},${col} updated; ${logv}`, );
-    }, row, col, allowUnsafe: true });
+    };
+
+    cell = new Cell({ row, col, sheet, workbook, allowUnsafe: true });
+    let cellUnSubscription = cell.subscribe(onCellUpdate);
 
     let displayValue = ""
     $: {
+        console.log("cell", cell)
+        if((cell.row !== row && row !== undefined) || (cell.col !== col && col !== undefined) || (cell.sheet !== sheet && col !== undefined) || (cell.workbook !== workbook && workbook !== undefined)) {
+            cellUnSubscription();
+            cell = new Cell({ row, col, sheet, workbook, allowUnsafe: true });
+            cellUnSubscription = cell.subscribe(onCellUpdate);
+            displayValue = typeof cell.value.value === 'symbol' ? cell.value.value.toString() : cell.value.value;
+        }
+    }
+    $: {
         displayValue = typeof cell.value.value === 'symbol' ? cell.value.value.toString() : cell.value.value;
-
     }
     
     onDestroy(cell.destroy);

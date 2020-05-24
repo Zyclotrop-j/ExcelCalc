@@ -5,7 +5,7 @@ import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import autoPreprocess from 'svelte-preprocess';
 
-const production = !process.env.ROLLUP_WATCH;
+const production = false && !process.env.ROLLUP_WATCH;
 
 export default {
 	input: 'src/main.js',

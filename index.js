@@ -1,30 +1,122 @@
 import parse from "./parser";
+import {
+    CELL,
+    STR_ESCAPED,
+    STR_PLAIN,
+    AGGREGATE,
+    SUBTOTAL,
+    NUMBER,
+    COMPLEX_NUMBER,
+    LIST,
+    MATRIX,
+    STRING,
+    ANY,
+    BOOLEAN,
+    FUNCTION,
+    ARGUMENTS,
+    NULL,
+    ARRAY,
+    ERROR,
+    DATE,
+    TIME,
+    DATETIME,
+    TRACE,
+    CELL_TRACE,
+    HYPERLINK,
+    NAVALUE,
+    VVALUE,
+    REFVALUE,
+    NUMVALUE,
+    DIV0,
+    NULLE,
+    NAMEE,
+    GETTINGDATA,
+    INLINE,
+    HIDDEN,
+    NATURALREF,
+    CIRCULAR,
+    CC2Currency
+  } from "./types";
 
-
-
-/*
-
-let xcontext = {
-    getCell: ({ row, col }, { calledBy }) => _context[row] && _context[row][col],
-    getRow: (row, { calledBy }) => ({ getCol: (col, { calledBy }) => _context[row] && _context[row][col], all: ({ calledBy }, { calledBy: cb2 } = {}) => _context[row] }),
-    getCol: (col, { calledBy }) => ({ getRow: (row, { calledBy }) => _context[row] && _context[row][col], all: ({ calledBy }, { calledBy: cb2 } = {}) => _context.map(i => i[col]) })
+const SyntaxError = parse.SyntaxError;
+const parser = parse.parse; 
+export {
+    CELL,
+    STR_ESCAPED,
+    STR_PLAIN,
+    AGGREGATE,
+    SUBTOTAL,
+    NUMBER,
+    COMPLEX_NUMBER,
+    LIST,
+    MATRIX,
+    STRING,
+    ANY,
+    BOOLEAN,
+    FUNCTION,
+    ARGUMENTS,
+    NULL,
+    ARRAY,
+    ERROR,
+    DATE,
+    TIME,
+    DATETIME,
+    TRACE,
+    CELL_TRACE,
+    HYPERLINK,
+    NAVALUE,
+    VVALUE,
+    REFVALUE,
+    NUMVALUE,
+    DIV0,
+    NULLE,
+    NAMEE,
+    GETTINGDATA,
+    INLINE,
+    HIDDEN,
+    NATURALREF,
+    CIRCULAR,
+    SyntaxError,
+    parser as parse
+};
+export default {
+    CELL,
+    STR_ESCAPED,
+    STR_PLAIN,
+    AGGREGATE,
+    SUBTOTAL,
+    NUMBER,
+    COMPLEX_NUMBER,
+    LIST,
+    MATRIX,
+    STRING,
+    ANY,
+    BOOLEAN,
+    FUNCTION,
+    ARGUMENTS,
+    NULL,
+    ARRAY,
+    ERROR,
+    DATE,
+    TIME,
+    DATETIME,
+    TRACE,
+    CELL_TRACE,
+    HYPERLINK,
+    NAVALUE,
+    VVALUE,
+    REFVALUE,
+    NUMVALUE,
+    DIV0,
+    NULLE,
+    NAMEE,
+    GETTINGDATA,
+    INLINE,
+    HIDDEN,
+    NATURALREF,
+    CIRCULAR,
+    SyntaxError: parse.SyntaxError,
+    parse:       parse.parse
 };
 
-const meta = {
-    _context: xcontext,
-    _currentcell: { row: 0, col: 0 }, // cell this formula is in
-    _calledBy: [] // 
-};
-
-const expression => parse(expression, {
-    ...meta,
-    _self: (exp, ctx) => parse(exp, {
-        ...meta,
-        ...ctx
-    }),
-});
-
-*/
-
-export default parse;
 
