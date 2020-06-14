@@ -5,19 +5,31 @@
 
 {
 
+    const typeOrError = (type, e) => (t) => {
+        if(t.value === "") {
+            return t;
+        }
+        return (type === t.type || t.type === ERROR) ? t : { type: ERROR, value: e || VVALUE, meta: t, [CELL_TRACE]: t[CELL_TRACE], tree: t.tree };
+    };
     const stdop = (a,b,op,returntype,operation) => {
-        
     	const {value:left,type:tleft,meta:{type:lstype}={}} = a;
         const {value:right,type:tright,meta:{type:rstype}={}} = b;
+        const tree = { type: OPERATION, value: [a,operation,b] };
         if(tleft === ERROR) {
             const e = new Error(left.description);
-            e.value = a;
-            throw e;
+            e.tree = tree;
+            e.type = ERROR;
+            e.value = left;
+            e.meta = { ...a, [CELL_TRACE]: a[CELL_TRACE], tree };
+            return e;
         }
         if(tright === ERROR) {
             const e = new Error(right.description);
-            e.value = b;
-            throw e;
+            e.tree = tree;
+            e.type = ERROR;
+            e.value = right;
+            e.meta = { ...b, [CELL_TRACE]: b[CELL_TRACE], tree };
+            return e;
         }
         const Cell_Trace = [...(a[CELL_TRACE] || []),...(b[CELL_TRACE] || [])];
         const meta = {
@@ -25,54 +37,55 @@
             right: b.meta||{},
             operation
         };
-            if(tleft === LIST && tright === NUMBER) {
-            	return { type: LIST, value: left.map(({
-                	value,
-                    meta:m = {},
-                    ...rest
-                }, idx) => ({
-                	...rest,
-                    type: returntype,
-                    value: op(value,right),
-                    meta: Object.assign(meta,{item: m,idx}),
-                    [CELL_TRACE]: Cell_Trace
-                })) }
-            }
-            if(tleft === NUMBER && tright === LIST) {
-            	return { type: LIST, value: right.map(({
-                	value,
-                    meta:m = {},
-                    ...rest
-                },idx) => ({
-                	...rest,
-                    type: returntype,
-                    value: op(left,value),
-                    meta: Object.assign(meta,{item: m,idx}),
-                    [CELL_TRACE]: Cell_Trace
-                })) }
-            }
-            if(tleft === LIST && tright === LIST) {
-            	return {
-                	type: LIST,
-                    value: left.map(({value,...rest},idx) => ({
-                    	...rest,
-                        ...right[idx],
-                        meta: {
-                        	...meta,
-                            item: {
-                            	left: rest.meta||{},
-                                right: right[idx].meta
-                            },
-                            idx,
+        if(tleft === LIST && tright === NUMBER) {
+            return { type: LIST, tree, value: left.map(({
+                value,
+                meta:m = {},
+                ...rest
+            }, idx) => ({
+                ...rest,
+                type: returntype,
+                value: op(value,right),
+                meta: Object.assign(meta,{item: m,idx}),
+                [CELL_TRACE]: Cell_Trace
+            })) }
+        }
+        if(tleft === NUMBER && tright === LIST) {
+            return { type: LIST, tree, value: right.map(({
+                value,
+                meta:m = {},
+                ...rest
+            },idx) => ({
+                ...rest,
+                type: returntype,
+                value: op(left,value),
+                meta: Object.assign(meta,{item: m,idx}),
+                [CELL_TRACE]: Cell_Trace
+            })) }
+        }
+        if(tleft === LIST && tright === LIST) {
+            return {
+                type: LIST,
+                tree,
+                value: left.map(({value,...rest},idx) => ({
+                    ...rest,
+                    ...right[idx],
+                    meta: {
+                        ...meta,
+                        item: {
+                            left: rest.meta||{},
+                            right: right[idx].meta
                         },
-                        type: returntype,
-                        value: op(value,right[idx].value),
-                        [CELL_TRACE]: Cell_Trace
-                    }))
-                }
-                // todo: Maybe distiguish by natural vs inline list?
+                        idx,
+                    },
+                    type: returntype,
+                    value: op(value,right[idx].value),
+                    [CELL_TRACE]: Cell_Trace
+                }))
             }
-        	return { ...a, ...b, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
+            // todo: Maybe distiguish by natural vs inline list?
+        }
+        return { ...a, ...b, tree, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
     };
     
     const functions = functionDefinitions;
@@ -203,13 +216,13 @@
 
 Start = Equasion / Escaped / Num / Static / Empty
 
-Empty = "" { return { type: NULL, value: null } }
+Empty = "" { return { type: NULL, value: null, tree: { type: STR_PLAIN, value: [""] } } }
 
-Equasion = "=" exp:Expression { return exp; }
+Equasion = "=" exp:Expression { return { ...exp, [CELL_TRACE]: exp[CELL_TRACE], tree: { type: OPERATION, value: ["=", exp.tree] } }; }
 
-Escaped = "'" str:String { return { type: STRING, value: text().substring(1), meta: { type: STR_ESCAPED } }; }
+Escaped = "'" str:String { return { type: STRING, value: text().substring(1), meta: { type: STR_ESCAPED }, tree: { type: STR_ESCAPED, value: [text()] } }; }
 
-Static = [^'=+\-*/&<>\^] String? { return { type: STRING, value: text(), meta: { type: STR_PLAIN } } }
+Static = [^'=+\-*/&<>\^] String? { return { type: STRING, value: text(), meta: { type: STR_PLAIN }, tree: { type: STR_PLAIN, value: [text()] } } }
 
 String = .+
 
@@ -235,16 +248,18 @@ YExpression
 XExpression
   = head:XTerm tail:(_ ("+" / "-") _ XTerm)* {
       return tail.reduce(function(result, element) {
-        if (element[1] === "+") { return stdop(result, element[3], (x,y)=>x+y, NUMBER, "+") }
-        if (element[1] === "-") { return stdop(result, element[3], (x,y)=>x-y, NUMBER, "-") }
+        const checkType = typeOrError(NUMBER);
+        if (element[1] === "+") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)+(y||0), NUMBER, "+") }
+        if (element[1] === "-") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)-(y||0), NUMBER, "-") }
       }, head);
     }
 
 XTerm
   = head:Term tail:(_ ("*" / "/") _ Term)* {
       return tail.reduce(function(result, element) {
-        if (element[1] === "*") { return stdop(result, element[3], (x,y)=>x*y, NUMBER, "*") }
-        if (element[1] === "/") { return stdop(result, element[3], (x,y)=>x/y, NUMBER, "/") }
+        const checkType = typeOrError(NUMBER);
+        if (element[1] === "*") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)*(y||0), NUMBER, "*") }
+        if (element[1] === "/") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)/(y||0), NUMBER, "/") }
       }, head);
     }
 
@@ -252,41 +267,46 @@ Term
   = head:Factor tail:(_ "^" _ Factor)* {
       return tail.reduce(function(result, element) {
         if (element[1] === "^") {
-        	return stdop(result, element[3], (x,y)=>Math.pow(x,y), NUMBER, "^");
+            const checkType = typeOrError(NUMBER);
+        	const v = stdop(checkType(result), checkType(element[3]), (x,y)=>Math.pow((x||0),y), NUMBER, "^");
+            if(element[3].value === 0 || element[3].value === "" || !element[3].value) {
+                return Object.assign(v, { type: ERROR, value: NUMVALUE }); // overwrite with error
+            }
+            return v;
         }
       }, head);
     }
 
-List = "{" inner:InnerList
-	rows:(";" x:InnerList { return x; })* "}" {
+List = "{" inner:InnerList rows:(";" x:InnerList { return x; })* "}" {
     const Cell_Trace = inner.map(i => i[CELL_TRACE] || []);
     if(!rows.length) {
-        return { type: LIST, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+        return { type: LIST, tree: { type: LIST, value: inner.reduce((p, i) => [...p, i, ","], []) }, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
     }
-    return { type: MATRIX, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+    const treevalue = [inner.reduce((p, i) => [...p, i, ","], []), ...rows.map(r => r.reduce((p, i) => [...p, i, ","], []))].reduce((p, i) => [...p, i, ";"], []);
+    return { type: MATRIX, tree: { type: MATRIX, value: treevalue }, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
 }
 
 InnerList = member:(True / False / Str / Num)? members:("," x:(True / False / Str / Num) {return x;})* { return [member || { type: NULL }, ...members]; }
 
 Factor
-  = "(" _ expr:Expression _ ")" { return expr; }
+  = "(" _ expr:Expression _ ")" { return { ...expr, [CELL_TRACE]: expr[CELL_TRACE], tree: { type: OPERATION, value: ["(", expr.tree, ")"] } }; }
    / List / Function / IdentifyFunction / Intersection / True / False / FiniteRangeR1C1 / R1C1Cell / InfiniteRangeAZ / InfiniteRange09 / FiniteRange / Cell / Str / Num
 
-True = _ "TRUE" _ { return { type: BOOLEAN, value: true, [CELL_TRACE]: [] } } 
+True = _ "TRUE" _ { return { type: BOOLEAN, value: true, [CELL_TRACE]: [], tree: { type: BOOLEAN, value: ["TRUE"] } } } 
 
-False = _ "FALSE" _ { return { type: BOOLEAN, value: false, [CELL_TRACE]: [] } }
+False = _ "FALSE" _ { return { type: BOOLEAN, value: false, [CELL_TRACE]: [], tree: { type: BOOLEAN, value: ["FALSE"] } } }
 
 CellSheetWorkbook
 	= Workbooksheetquote / Sheetquote / Workbooksheet / Sheet
     
-Sheet = t:([a-zA-Z][a-zA-Z0-9_]* { return text(); }) "!" { return { sheet: t }; }
-Workbooksheet = "[" t:([a-zA-Z][a-zA-Z0-9_.]* { return text(); })  "]" s:Sheet { return { ...s, workbook: t } }
-Sheetquote = "'" t:( ("\\'" / [^'])+ { return text().replace(/\\'/g, "'"); } ) "'" "!" { return { sheet: t }  }
+Sheet = t:([a-zA-Z][a-zA-Z0-9_]* { return text(); }) "!" { return { sheet: t, sheetraw: [t, "!"] }; }
+Workbooksheet = "[" t:([a-zA-Z][a-zA-Z0-9_.]* { return text(); })  "]" s:Sheet { return { ...s, workbook: t, workbookraw: ["[", t, "]"] } }
+Sheetquote = "'" t:( ("\\'" / [^'])+ { return text().replace(/\\'/g, "'"); } ) "'" "!" { return { sheet: t, sheetraw: [text().slice(0, -1), "!"] }  }
 Workbooksheetquote = 
 	"'"
-    	"[" t1:( ("\\]" / [^\]])+ { return text().replace(/\\\]/g, "]"); } ) "]"
-		t2:( ("\\'" / [^'])+ { return text().replace(/\\'/g, "'"); } ) 
-    "'" "!" { return { sheet: t2, workbook: t1 }  }
+    	"[" t1:( ("\\]" / [^\]])+ { return { v: text().replace(/\\\]/g, "]"), r: text() }; } ) "]"
+		t2:( ("\\'" / [^'])+ { return { v: text().replace(/\\'/g, "'"), r: text() }; } ) 
+    "'" "!" { return { sheet: t2.v, workbook: t1.v, absraw: ["'[", t1.r, "]", t2.r, "'!"] }  }
 Cell
     = _ c:CellNoSpace _ { return c; }
 
@@ -294,7 +314,6 @@ CellNoSpace
 	= loc:(CellSheetWorkbook)? abscol:"$"? col:[A-Z]+ absrow:"$"? row:([1-9][0-9]* { return parseInt(text(), 10); }) {
     const c = col.reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
     const { row: crow, col: ccol } = currentcell;
-    // loc:(CellSheetWorkbook)?
     const locx = loc || {};
     let contextu = context;
     if(locx.workbook) {
@@ -303,11 +322,13 @@ CellNoSpace
     if(locx.sheet) {
     	contextu = contextu.getSheet(locx.sheet);
     }
+    const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
     const carg = { ...locx, row: row-1, col: c-1, type: NATURALREF };
     const v = contextu.getRow(row-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
     const inheritedCellTrace = v[CELL_TRACE] || [];
     const result = {
     	...v,
+        tree: { type: CELL, value: [...workbookandsheettreevalue, abscol ? "$" : "", col.join(""), absrow ? "$" : "", row] },
     	type: v.type,
         meta: { ...locx, type: CELL, row: row, col: c, absrow: absrow === "$", abscol: abscol === "$", workbook: locx.workbook, sheet: locx.sheet },
         value: v.value,
@@ -331,11 +352,13 @@ R1C1Cell
     if(locx.sheet) {
     	contextu = contextu.getSheet(locx.sheet);
     }
+    const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
     const carg = { ...locx, row: r-1, col: c-1, type: NATURALREF };
     const v = contextu.getRow(r-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
     const inheritedCellTrace = v[CELL_TRACE] || [];
     return {
     	...v,
+        tree: { type: CELL, value: [...workbookandsheettreevalue, "R", row, "C", col] },
     	type: v.type,
         meta: { ...locx, type: CELL, row: r, col: c, absrow: row.absolute, abscol: col.absolute, notation: "R1C1", workbook: locx.workbook, sheet: locx.sheet },
         value: v.value,
@@ -344,15 +367,14 @@ R1C1Cell
 }
 
 R1C1CellAbs = "[" cell:([1-9][0-9]* { return parseInt(text(), 10); }) "]" {
-				return { cell, absolute: true };
+				return { cell, absolute: true, tree: { type: R1C1PARTIAL, value: ["[", cell, "]"] } };
 			} / cell:([1-9][0-9]* { return parseInt(text(), 10); }) {
-				return { cell, absolute: false };
+				return { cell, absolute: false, tree: { type: R1C1PARTIAL, value: ["", cell, ""] } };
 			}
 
 FiniteRangeR1C1
 	= _ loc:(CellSheetWorkbook)? start:R1C1Cell ":" end:R1C1Cell _ {
     
-    	// loc:(CellSheetWorkbook)?
         const locx = loc || {};
         let contextu = context;
         if(locx.workbook) {
@@ -361,6 +383,7 @@ FiniteRangeR1C1
         if(locx.sheet) {
             contextu = contextu.getSheet(locx.sheet);
         }
+        const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
         const meta = { ...locx, type: NATURALREF };
     	const results = [];
         const cellTrace = []
@@ -376,21 +399,22 @@ FiniteRangeR1C1
         }
         
         if(results.length === 1) {
-        	return { type: LIST, value: results[0], meta, [CELL_TRACE]: cellTrace }
+        	return { type: LIST, value: results[0], meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
         }
         if(results.every(r => r.length === 1)) {
-        	return { type: LIST, value: results.map(i => i[0]), meta, [CELL_TRACE]: cellTrace }
+        	return { type: LIST, value: results.map(i => i[0]), meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
         }
-        return { type: MATRIX, value: results, meta, [CELL_TRACE]: cellTrace }
+        return { type: MATRIX, value: results, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
     }
 
-IdentifyFunction = _ "(" arg0:Arg args:(_ "," _ t:(y:Arg { return y; } / "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" _ { return { type: ARGUMENTS, value: [arg0, ...args] } }
+IdentifyFunction = _ "(" arg0:Arg args:(_ "," _ t:(y:Arg { return y; } / "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" _ { return { type: ARGUMENTS, value: [arg0, ...args], tree: { type: ARGUMENTS, value: [arg0, ...args.reduce((p, i) => [...p, ",", i], [])] } } }
 
 Function
 	= name:([a-zA-Z][a-zA-Z0-9.]* { return text() }) _ "(" arg0:Arg? args:(_ "," _ t:(y:Arg { return y; } / "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" {
-	if(functions[name]) {
-    	const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
-        const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
+    const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
+    const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
+    const argumenttree = [arg0 || "", ...args.reduce((p, i) => [...p, ",", i || ""], [])];
+    if(functions[name]) {
         try {
         	const func = functions[name];
             
@@ -402,24 +426,35 @@ Function
                 function: name,
             	arguments: allargs
             };
+            v.tree = { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] };
             v[CELL_TRACE] = cellTrace.concat(v[CELL_TRACE] || []);
             return v;
         } catch(e) {
         	const initialError = allargs.find((e) => e && (e.type === ERROR));
             const r = { type: ERROR, value: (initialError && initialError.value) || e.name+' in '+name+': "'+e.message+'"', meta: {  error_value: initialError, internal_error: e } }
+            r.tree = { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] };
             r[CELL_TRACE] = cellTrace;
             return r;
         }
     }
     if(functions[name.toUpperCase()]) {
-    	return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+name.toUpperCase()+"?" } };
+    	return { 
+            type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+name.toUpperCase()+"?" },
+            tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+        };
     }
     const simiar = Object.keys(functions).find(fnc => fnc.toUpperCase() === name.toUpperCase());
     if(simiar) {
-    	return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+simiar+"?" } };
+    	return {
+            type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+simiar+"?" },
+            tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+        };
     }
     // todo find close names
-    return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name } };
+    return {
+        type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name }, meta: { name },
+        tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+    };
 }
 
 Arg
@@ -435,6 +470,7 @@ Intersection
     return {
     	type: LIST,
     	value: v,
+        tree: { type: OPERATION, value: [a, " ", b] },
         meta: { type: NATURALREF },
         [CELL_TRACE]: cellTrace
     }
@@ -445,7 +481,6 @@ InfiniteRangeAZ
     	if(start !== end) {
         	throw new Error("Infinite row-ranges can't span multiple columns \""+start+":"+end+"\"")
         }
-        // loc:(CellSheetWorkbook)?
         const locx = loc || {};
         let contextu = context;
         if(locx.workbook) {
@@ -454,11 +489,12 @@ InfiniteRangeAZ
         if(locx.sheet) {
             contextu = contextu.getSheet(locx.sheet);
         }
+        const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
         const c = start.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
         const meta = { ...locx, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
         const v = contextu.getCol(c-1,meta).all({ col: c-1 }, meta);
         const cellTrace = [{ col: c, row: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
-        return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+        return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } };
         
     }
   
@@ -476,11 +512,12 @@ InfiniteRange09
         if(locx.sheet) {
             contextu = contextu.getSheet(locx.sheet);
         }
+        const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
         const r = parseInt(start, 10);
         const meta = { ...contextu, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
         const v = contextu.getRow(r-1,meta).all({ row: r-1 },meta);
         const cellTrace = [{ row: r, col: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
-        return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+        return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } };
     }
 
 FiniteRange = _ x:XFiniteRange _ { return x; }
@@ -490,11 +527,11 @@ XFiniteRange
     	const results = [];
         let start = unsafestart;
         if(unsafestart.type === ERROR && unsafestart.value === CIRCULAR) {
-        	start = {...unsafestart.meta, meta: unsafestart.meta};
+        	start = {...unsafestart.meta, meta: unsafestart.meta, tree: unsafestart.tree};
         }
         let end = unsafeend;
         if(unsafeend.type === ERROR && unsafeend.value === CIRCULAR) {
-        	end = {...unsafeend.meta, meta: unsafeend.meta};
+        	end = {...unsafeend.meta, meta: unsafeend.meta, tree: unsafeend.tree};
         }
         let contextu = context;
         const loc = {};
@@ -523,48 +560,50 @@ XFiniteRange
           results.push(t);
         }
         
+        const tree = { type: RANGE, value: [...start.tree.value.slice(0,5), start.tree, ":", end.tree] };
         if(results.length === 1) {
-        	const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
+        	const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace, tree };
         	if(circularFlag) {
-                return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
             }
         	return result;
         }
         if(results.every(r => r.length === 1)) {
-        	const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
+        	const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace, tree };
         	if(circularFlag) {
-                return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
             }
         	return result;
         }
         const result = {
         	type: MATRIX,
             value: results,
+            tree,
             get rowspan() { return results.length }, 
             get colspan() { return results[0].length },
             meta: { ...loc, type: NATURALREF },
             [CELL_TRACE]: cellTrace
        };
        if(unsafestart.type === ERROR && unsafestart.value === CIRCULAR) {
-        	return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+        	return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
         }
        if(circularFlag) {
-       	return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+       	return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
        }
        
         if(unsafeend.type === ERROR && unsafeend.value === CIRCULAR) {
-        	return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+        	return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
         }
         return result;
     }
 
 Str
-	 = "\"\"" {return { type: STRING, value: "", meta: { empty: true } }} /  _ "\"" t:( ("\\\"" / [^"])* { return text().replace(/\\\"/g, "\""); } ) "\"" _ {return { type: STRING, value: t } }
+	 = "\"\"" {return { type: STRING, value: "", meta: { empty: true }, tree: { type: STRING, value: ['""'] } }} /  _ "\"" t:( ("\\\"" / [^"])* { return { v: text().replace(/\\\"/g, "\""), r: text() }; } ) "\"" _ {return { type: STRING, value: t.v, tree: { type: STRING, value: ['"', t.r, '"'] } } }
 
 Num "number"
   = _ num:Number _ { return num; }
 
-Number = ("+" / "-" / "") [0-9]+ ("." [0-9]+)? percent:"%"? { return { type: NUMBER, value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10) }; }
+Number = sign:("+" / "-" / "") int:([0-9]+) dec:("." [0-9]+)? percent:"%"? { return { type: NUMBER, value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10), tree: [sign, int.join(""), dec ? "." : "", dec ? dec.join("").substring(1) : "", percent || ""] }; }
 
 _ "whitespace"
   = [ \t\n\r]*

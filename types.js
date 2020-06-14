@@ -33,6 +33,10 @@ export const INLINE = Symbol("INLINE");
 export const HIDDEN = Symbol("HIDDEN"); // cell visibility, set meta:{visibility:HIDDEN} when cell is hidden; effects some functions
 export const NATURALREF = Symbol("NATURAL_REFERENCE");
 export const CIRCULAR = Symbol("CIRCULAR_REFERENCE");
+export const OPERATION = Symbol("OPERATION");
+export const R1C1PARTIAL = Symbol("R1C1PARTIAL");
+export const FUNCTIONCALL = Symbol("FUNCTIONCALL");
+export const RANGE = Symbol("RANGE");
 
 export const CC2Currency = {
     AD: "EUR",
@@ -321,5 +325,9 @@ export default {
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     CC2Currency
 };

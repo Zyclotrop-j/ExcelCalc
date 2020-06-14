@@ -36,6 +36,10 @@ import {
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     CC2Currency
 } from "./types";
 import functionDefinitions from "./functions";
@@ -272,10 +276,10 @@ function peg$parse(input, options) {
   var peg$e46 = peg$otherExpectation("number");
   var peg$e47 = peg$otherExpectation("whitespace");
 
-  var peg$f0 = function() { return { type: NULL, value: null } };
-  var peg$f1 = function(exp) { return exp; };
-  var peg$f2 = function(str) { return { type: STRING, value: text().substring(1), meta: { type: STR_ESCAPED } }; };
-  var peg$f3 = function() { return { type: STRING, value: text(), meta: { type: STR_PLAIN } } };
+  var peg$f0 = function() { return { type: NULL, value: null, tree: { type: STR_PLAIN, value: [""] } } };
+  var peg$f1 = function(exp) { return { ...exp, [CELL_TRACE]: exp[CELL_TRACE], tree: { type: OPERATION, value: ["=", exp.tree] } }; };
+  var peg$f2 = function(str) { return { type: STRING, value: text().substring(1), meta: { type: STR_ESCAPED }, tree: { type: STR_ESCAPED, value: [text()] } }; };
+  var peg$f3 = function() { return { type: STRING, value: text(), meta: { type: STR_PLAIN }, tree: { type: STR_PLAIN, value: [text()] } } };
   var peg$f4 = function(head, tail) {
         return tail.reduce(function(result, element) {
           if (element[1] === "=") { return stdop(result, element[3], (x,y)=>x==y, BOOLEAN, "==") }
@@ -293,20 +297,27 @@ function peg$parse(input, options) {
       };
   var peg$f6 = function(head, tail) {
         return tail.reduce(function(result, element) {
-          if (element[1] === "+") { return stdop(result, element[3], (x,y)=>x+y, NUMBER, "+") }
-          if (element[1] === "-") { return stdop(result, element[3], (x,y)=>x-y, NUMBER, "-") }
+          const checkType = typeOrError(NUMBER);
+          if (element[1] === "+") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)+(y||0), NUMBER, "+") }
+          if (element[1] === "-") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)-(y||0), NUMBER, "-") }
         }, head);
       };
   var peg$f7 = function(head, tail) {
         return tail.reduce(function(result, element) {
-          if (element[1] === "*") { return stdop(result, element[3], (x,y)=>x*y, NUMBER, "*") }
-          if (element[1] === "/") { return stdop(result, element[3], (x,y)=>x/y, NUMBER, "/") }
+          const checkType = typeOrError(NUMBER);
+          if (element[1] === "*") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)*(y||0), NUMBER, "*") }
+          if (element[1] === "/") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)/(y||0), NUMBER, "/") }
         }, head);
       };
   var peg$f8 = function(head, tail) {
         return tail.reduce(function(result, element) {
           if (element[1] === "^") {
-          	return stdop(result, element[3], (x,y)=>Math.pow(x,y), NUMBER, "^");
+              const checkType = typeOrError(NUMBER);
+          	const v = stdop(checkType(result), checkType(element[3]), (x,y)=>Math.pow((x||0),y), NUMBER, "^");
+              if(element[3].value === 0 || element[3].value === "" || !element[3].value) {
+                  return Object.assign(v, { type: ERROR, value: NUMVALUE }); // overwrite with error
+              }
+              return v;
           }
         }, head);
       };
@@ -314,29 +325,29 @@ function peg$parse(input, options) {
   var peg$f10 = function(inner, rows) {
       const Cell_Trace = inner.map(i => i[CELL_TRACE] || []);
       if(!rows.length) {
-          return { type: LIST, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+          return { type: LIST, tree: { type: LIST, value: inner.reduce((p, i) => [...p, i, ","], []) }, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
       }
-      return { type: MATRIX, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
+      const treevalue = [inner.reduce((p, i) => [...p, i, ","], []), ...rows.map(r => r.reduce((p, i) => [...p, i, ","], []))].reduce((p, i) => [...p, i, ";"], []);
+      return { type: MATRIX, tree: { type: MATRIX, value: treevalue }, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
   };
   var peg$f11 = function(member, x) {return x;};
   var peg$f12 = function(member, members) { return [member || { type: NULL }, ...members]; };
-  var peg$f13 = function(expr) { return expr; };
-  var peg$f14 = function() { return { type: BOOLEAN, value: true, [CELL_TRACE]: [] } };
-  var peg$f15 = function() { return { type: BOOLEAN, value: false, [CELL_TRACE]: [] } };
+  var peg$f13 = function(expr) { return { ...expr, [CELL_TRACE]: expr[CELL_TRACE], tree: { type: OPERATION, value: ["(", expr.tree, ")"] } }; };
+  var peg$f14 = function() { return { type: BOOLEAN, value: true, [CELL_TRACE]: [], tree: { type: BOOLEAN, value: ["TRUE"] } } };
+  var peg$f15 = function() { return { type: BOOLEAN, value: false, [CELL_TRACE]: [], tree: { type: BOOLEAN, value: ["FALSE"] } } };
   var peg$f16 = function() { return text(); };
-  var peg$f17 = function(t) { return { sheet: t }; };
-  var peg$f18 = function(t, s) { return { ...s, workbook: t } };
+  var peg$f17 = function(t) { return { sheet: t, sheetraw: [t, "!"] }; };
+  var peg$f18 = function(t, s) { return { ...s, workbook: t, workbookraw: ["[", t, "]"] } };
   var peg$f19 = function() { return text().replace(/\\'/g, "'"); };
-  var peg$f20 = function(t) { return { sheet: t }  };
-  var peg$f21 = function() { return text().replace(/\\\]/g, "]"); };
-  var peg$f22 = function(t1) { return text().replace(/\\'/g, "'"); };
-  var peg$f23 = function(t1, t2) { return { sheet: t2, workbook: t1 }  };
+  var peg$f20 = function(t) { return { sheet: t, sheetraw: [text().slice(0, -1), "!"] }  };
+  var peg$f21 = function() { return { v: text().replace(/\\\]/g, "]"), r: text() }; };
+  var peg$f22 = function(t1) { return { v: text().replace(/\\'/g, "'"), r: text() }; };
+  var peg$f23 = function(t1, t2) { return { sheet: t2.v, workbook: t1.v, absraw: ["'[", t1.r, "]", t2.r, "'!"] }  };
   var peg$f24 = function(c) { return c; };
   var peg$f25 = function(loc, abscol, col, absrow) { return parseInt(text(), 10); };
   var peg$f26 = function(loc, abscol, col, absrow, row) {
       const c = col.reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
       const { row: crow, col: ccol } = currentcell;
-      // loc:(CellSheetWorkbook)?
       const locx = loc || {};
       let contextu = context;
       if(locx.workbook) {
@@ -345,11 +356,13 @@ function peg$parse(input, options) {
       if(locx.sheet) {
       	contextu = contextu.getSheet(locx.sheet);
       }
+      const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
       const carg = { ...locx, row: row-1, col: c-1, type: NATURALREF };
       const v = contextu.getRow(row-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
       const inheritedCellTrace = v[CELL_TRACE] || [];
       const result = {
       	...v,
+          tree: { type: CELL, value: [...workbookandsheettreevalue, abscol ? "$" : "", col.join(""), absrow ? "$" : "", row] },
       	type: v.type,
           meta: { ...locx, type: CELL, row: row, col: c, absrow: absrow === "$", abscol: abscol === "$", workbook: locx.workbook, sheet: locx.sheet },
           value: v.value,
@@ -371,11 +384,13 @@ function peg$parse(input, options) {
       if(locx.sheet) {
       	contextu = contextu.getSheet(locx.sheet);
       }
+      const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
       const carg = { ...locx, row: r-1, col: c-1, type: NATURALREF };
       const v = contextu.getRow(r-1, carg).getCol(c-1, carg) || { value: null, type: "ERROR" };
       const inheritedCellTrace = v[CELL_TRACE] || [];
       return {
       	...v,
+          tree: { type: CELL, value: [...workbookandsheettreevalue, "R", row, "C", col] },
       	type: v.type,
           meta: { ...locx, type: CELL, row: r, col: c, absrow: row.absolute, abscol: col.absolute, notation: "R1C1", workbook: locx.workbook, sheet: locx.sheet },
           value: v.value,
@@ -384,14 +399,13 @@ function peg$parse(input, options) {
   };
   var peg$f28 = function() { return parseInt(text(), 10); };
   var peg$f29 = function(cell) {
-  				return { cell, absolute: true };
+  				return { cell, absolute: true, tree: { type: R1C1PARTIAL, value: ["[", cell, "]"] } };
   			};
   var peg$f30 = function(cell) {
-  				return { cell, absolute: false };
+  				return { cell, absolute: false, tree: { type: R1C1PARTIAL, value: ["", cell, ""] } };
   			};
   var peg$f31 = function(loc, start, end) {
       
-      	// loc:(CellSheetWorkbook)?
           const locx = loc || {};
           let contextu = context;
           if(locx.workbook) {
@@ -400,6 +414,7 @@ function peg$parse(input, options) {
           if(locx.sheet) {
               contextu = contextu.getSheet(locx.sheet);
           }
+          const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
           const meta = { ...locx, type: NATURALREF };
       	const results = [];
           const cellTrace = []
@@ -415,25 +430,26 @@ function peg$parse(input, options) {
           }
           
           if(results.length === 1) {
-          	return { type: LIST, value: results[0], meta, [CELL_TRACE]: cellTrace }
+          	return { type: LIST, value: results[0], meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
           }
           if(results.every(r => r.length === 1)) {
-          	return { type: LIST, value: results.map(i => i[0]), meta, [CELL_TRACE]: cellTrace }
+          	return { type: LIST, value: results.map(i => i[0]), meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
           }
-          return { type: MATRIX, value: results, meta, [CELL_TRACE]: cellTrace }
+          return { type: MATRIX, value: results, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } }
       };
   var peg$f32 = function(arg0, y) { return y; };
   var peg$f33 = function(arg0) { return { type: NULL, value: undefined } };
   var peg$f34 = function(arg0, t) { return t; };
-  var peg$f35 = function(arg0, args) { return { type: ARGUMENTS, value: [arg0, ...args] } };
+  var peg$f35 = function(arg0, args) { return { type: ARGUMENTS, value: [arg0, ...args], tree: { type: ARGUMENTS, value: [arg0, ...args.reduce((p, i) => [...p, ",", i], [])] } } };
   var peg$f36 = function() { return text() };
   var peg$f37 = function(name, arg0, y) { return y; };
   var peg$f38 = function(name, arg0) { return { type: NULL, value: undefined } };
   var peg$f39 = function(name, arg0, t) { return t; };
   var peg$f40 = function(name, arg0, args) {
-  	if(functions[name]) {
-      	const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
-          const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
+      const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
+      const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
+      const argumenttree = [arg0 || "", ...args.reduce((p, i) => [...p, ",", i || ""], [])];
+      if(functions[name]) {
           try {
           	const func = functions[name];
               
@@ -445,24 +461,35 @@ function peg$parse(input, options) {
                   function: name,
               	arguments: allargs
               };
+              v.tree = { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] };
               v[CELL_TRACE] = cellTrace.concat(v[CELL_TRACE] || []);
               return v;
           } catch(e) {
           	const initialError = allargs.find((e) => e && (e.type === ERROR));
               const r = { type: ERROR, value: (initialError && initialError.value) || e.name+' in '+name+': "'+e.message+'"', meta: {  error_value: initialError, internal_error: e } }
+              r.tree = { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] };
               r[CELL_TRACE] = cellTrace;
               return r;
           }
       }
       if(functions[name.toUpperCase()]) {
-      	return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+name.toUpperCase()+"?" } };
+      	return { 
+              type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+name.toUpperCase()+"?" },
+              tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+          };
       }
       const simiar = Object.keys(functions).find(fnc => fnc.toUpperCase() === name.toUpperCase());
       if(simiar) {
-      	return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+simiar+"?" } };
+      	return {
+              type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name+". Did you mean "+simiar+"?" },
+              tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+          };
       }
       // todo find close names
-      return { type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name } };
+      return {
+          type: ERROR, value: NAMEE, meta: { error: "Unknown function "+name }, meta: { name },
+          tree: { type: FUNCTIONCALL, value: [name, "(", ...argumenttree, ")"] }
+      };
   };
   var peg$f41 = function(a, b) {
       if(a.type !== LIST || b.type !== LIST) {
@@ -473,6 +500,7 @@ function peg$parse(input, options) {
       return {
       	type: LIST,
       	value: v,
+          tree: { type: OPERATION, value: [a, " ", b] },
           meta: { type: NATURALREF },
           [CELL_TRACE]: cellTrace
       }
@@ -483,7 +511,6 @@ function peg$parse(input, options) {
       	if(start !== end) {
           	throw new Error("Infinite row-ranges can't span multiple columns \""+start+":"+end+"\"")
           }
-          // loc:(CellSheetWorkbook)?
           const locx = loc || {};
           let contextu = context;
           if(locx.workbook) {
@@ -492,11 +519,12 @@ function peg$parse(input, options) {
           if(locx.sheet) {
               contextu = contextu.getSheet(locx.sheet);
           }
+          const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
           const c = start.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0);
           const meta = { ...locx, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
           const v = contextu.getCol(c-1,meta).all({ col: c-1 }, meta);
           const cellTrace = [{ col: c, row: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
-          return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+          return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } };
           
       };
   var peg$f45 = function(loc, start, end) {
@@ -512,22 +540,23 @@ function peg$parse(input, options) {
           if(locx.sheet) {
               contextu = contextu.getSheet(locx.sheet);
           }
+          const workbookandsheettreevalue = locx.absraw || locx.sheetraw ? locx.workbookraw ? [...locx.workbookraw, ...locx.sheetraw] : ["", "", "", ...locx.sheetraw] : ["", "", "", "", ""] || ["", "", "", "", ""];
           const r = parseInt(start, 10);
           const meta = { ...contextu, type: NATURALREF, workbook: locx.workbook, sheet: locx.sheet };
           const v = contextu.getRow(r-1,meta).all({ row: r-1 },meta);
           const cellTrace = [{ row: r, col: "*", workbook: locx.workbook, sheet: locx.sheet }].concat(...v.map(i => i[CELL_TRACE] || []));
-          return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace };
+          return { type: LIST, value: v, meta, [CELL_TRACE]: cellTrace, tree: { type: RANGE, value: [...workbookandsheettreevalue, start, ":", end] } };
       };
   var peg$f46 = function(x) { return x; };
   var peg$f47 = function(unsafestart, unsafeend) {
       	const results = [];
           let start = unsafestart;
           if(unsafestart.type === ERROR && unsafestart.value === CIRCULAR) {
-          	start = {...unsafestart.meta, meta: unsafestart.meta};
+          	start = {...unsafestart.meta, meta: unsafestart.meta, tree: unsafestart.tree};
           }
           let end = unsafeend;
           if(unsafeend.type === ERROR && unsafeend.value === CIRCULAR) {
-          	end = {...unsafeend.meta, meta: unsafeend.meta};
+          	end = {...unsafeend.meta, meta: unsafeend.meta, tree: unsafeend.tree};
           }
           let contextu = context;
           const loc = {};
@@ -556,45 +585,47 @@ function peg$parse(input, options) {
             results.push(t);
           }
           
+          const tree = { type: RANGE, value: [...start.tree.value.slice(0,5), start.tree, ":", end.tree] };
           if(results.length === 1) {
-          	const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
+          	const result = { type: LIST, value: results[0], rowspan: 1, colspan: results[0].length, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace, tree };
           	if(circularFlag) {
-                  return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                  return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
               }
           	return result;
           }
           if(results.every(r => r.length === 1)) {
-          	const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace };
+          	const result = { type: LIST, value: results.map(i => i[0]), rowspan: results.length, colspan: 1, meta: { ...loc, type: NATURALREF }, [CELL_TRACE]: cellTrace, tree };
           	if(circularFlag) {
-                  return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+                  return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
               }
           	return result;
           }
           const result = {
           	type: MATRIX,
               value: results,
+              tree,
               get rowspan() { return results.length }, 
               get colspan() { return results[0].length },
               meta: { ...loc, type: NATURALREF },
               [CELL_TRACE]: cellTrace
          };
          if(unsafestart.type === ERROR && unsafestart.value === CIRCULAR) {
-          	return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+          	return { ...unsafestart, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
           }
          if(circularFlag) {
-         	return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+         	return { type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
          }
          
           if(unsafeend.type === ERROR && unsafeend.value === CIRCULAR) {
-          	return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace };
+          	return { ...unsafeend, type: ERROR, value: CIRCULAR, meta: result, [CELL_TRACE]: cellTrace, tree };
           }
           return result;
       };
-  var peg$f48 = function() {return { type: STRING, value: "", meta: { empty: true } }};
-  var peg$f49 = function() { return text().replace(/\\\"/g, "\""); };
-  var peg$f50 = function(t) {return { type: STRING, value: t } };
+  var peg$f48 = function() {return { type: STRING, value: "", meta: { empty: true }, tree: { type: STRING, value: ['""'] } }};
+  var peg$f49 = function() { return { v: text().replace(/\\\"/g, "\""), r: text() }; };
+  var peg$f50 = function(t) {return { type: STRING, value: t.v, tree: { type: STRING, value: ['"', t.r, '"'] } } };
   var peg$f51 = function(num) { return num; };
-  var peg$f52 = function(percent) { return { type: NUMBER, value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10) }; };
+  var peg$f52 = function(sign, int, dec, percent) { return { type: NUMBER, value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10), tree: [sign, int.join(""), dec ? "." : "", dec ? dec.join("").substring(1) : "", percent || ""] }; };
 
   var peg$currPos = 0;
   var peg$savedPos = 0;
@@ -3332,7 +3363,7 @@ function peg$parse(input, options) {
           s4 = null;
         }
         peg$savedPos = s0;
-        s0 = peg$f52(s4);
+        s0 = peg$f52(s1, s2, s3, s4);
       } else {
         peg$currPos = s0;
         s0 = peg$FAILED;
@@ -3377,19 +3408,31 @@ function peg$parse(input, options) {
 
 
 
+      const typeOrError = (type, e) => (t) => {
+          if(t.value === "") {
+              return t;
+          }
+          return (type === t.type || t.type === ERROR) ? t : { type: ERROR, value: e || VVALUE, meta: t, [CELL_TRACE]: t[CELL_TRACE], tree: t.tree };
+      };
       const stdop = (a,b,op,returntype,operation) => {
-          
       	const {value:left,type:tleft,meta:{type:lstype}={}} = a;
           const {value:right,type:tright,meta:{type:rstype}={}} = b;
+          const tree = { type: OPERATION, value: [a,operation,b] };
           if(tleft === ERROR) {
               const e = new Error(left.description);
-              e.value = a;
-              throw e;
+              e.tree = tree;
+              e.type = ERROR;
+              e.value = left;
+              e.meta = { ...a, [CELL_TRACE]: a[CELL_TRACE], tree };
+              return e;
           }
           if(tright === ERROR) {
               const e = new Error(right.description);
-              e.value = b;
-              throw e;
+              e.tree = tree;
+              e.type = ERROR;
+              e.value = right;
+              e.meta = { ...b, [CELL_TRACE]: b[CELL_TRACE], tree };
+              return e;
           }
           const Cell_Trace = [...(a[CELL_TRACE] || []),...(b[CELL_TRACE] || [])];
           const meta = {
@@ -3397,54 +3440,55 @@ function peg$parse(input, options) {
               right: b.meta||{},
               operation
           };
-              if(tleft === LIST && tright === NUMBER) {
-              	return { type: LIST, value: left.map(({
-                  	value,
-                      meta:m = {},
-                      ...rest
-                  }, idx) => ({
-                  	...rest,
-                      type: returntype,
-                      value: op(value,right),
-                      meta: Object.assign(meta,{item: m,idx}),
-                      [CELL_TRACE]: Cell_Trace
-                  })) }
-              }
-              if(tleft === NUMBER && tright === LIST) {
-              	return { type: LIST, value: right.map(({
-                  	value,
-                      meta:m = {},
-                      ...rest
-                  },idx) => ({
-                  	...rest,
-                      type: returntype,
-                      value: op(left,value),
-                      meta: Object.assign(meta,{item: m,idx}),
-                      [CELL_TRACE]: Cell_Trace
-                  })) }
-              }
-              if(tleft === LIST && tright === LIST) {
-              	return {
-                  	type: LIST,
-                      value: left.map(({value,...rest},idx) => ({
-                      	...rest,
-                          ...right[idx],
-                          meta: {
-                          	...meta,
-                              item: {
-                              	left: rest.meta||{},
-                                  right: right[idx].meta
-                              },
-                              idx,
+          if(tleft === LIST && tright === NUMBER) {
+              return { type: LIST, tree, value: left.map(({
+                  value,
+                  meta:m = {},
+                  ...rest
+              }, idx) => ({
+                  ...rest,
+                  type: returntype,
+                  value: op(value,right),
+                  meta: Object.assign(meta,{item: m,idx}),
+                  [CELL_TRACE]: Cell_Trace
+              })) }
+          }
+          if(tleft === NUMBER && tright === LIST) {
+              return { type: LIST, tree, value: right.map(({
+                  value,
+                  meta:m = {},
+                  ...rest
+              },idx) => ({
+                  ...rest,
+                  type: returntype,
+                  value: op(left,value),
+                  meta: Object.assign(meta,{item: m,idx}),
+                  [CELL_TRACE]: Cell_Trace
+              })) }
+          }
+          if(tleft === LIST && tright === LIST) {
+              return {
+                  type: LIST,
+                  tree,
+                  value: left.map(({value,...rest},idx) => ({
+                      ...rest,
+                      ...right[idx],
+                      meta: {
+                          ...meta,
+                          item: {
+                              left: rest.meta||{},
+                              right: right[idx].meta
                           },
-                          type: returntype,
-                          value: op(value,right[idx].value),
-                          [CELL_TRACE]: Cell_Trace
-                      }))
-                  }
-                  // todo: Maybe distiguish by natural vs inline list?
+                          idx,
+                      },
+                      type: returntype,
+                      value: op(value,right[idx].value),
+                      [CELL_TRACE]: Cell_Trace
+                  }))
               }
-          	return { ...a, ...b, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
+              // todo: Maybe distiguish by natural vs inline list?
+          }
+          return { ...a, ...b, tree, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
       };
       
       const functions = functionDefinitions;

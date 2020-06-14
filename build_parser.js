@@ -39,6 +39,10 @@ const typedefs = `{
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     CC2Currency
 }`; 
 

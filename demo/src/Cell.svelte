@@ -1,42 +1,33 @@
 <script>
 	import { onDestroy } from 'svelte';
-    import { Cell } from "../../util.js";
+    import { defaultTableAPI } from "../../util.js";
 
     export let col;
     export let row;
     export let sheet;
     export let workbook;
 
-    let cell;
-    const onCellUpdate = (__, c) => {
-        cell = c;
+    let value;
+    let formula;
+
+    const onCellUpdate = (evt) => {
+        value = evt.value.value;
+        formula = evt.formula;
     };
 
-    cell = new Cell({ row, col, sheet, workbook, allowUnsafe: true });
-    let cellUnSubscription = cell.subscribe(onCellUpdate);
+    let cellUnSubscription = defaultTableAPI.registerCell([workbook, sheet, col, row], onCellUpdate);
+    let onCellChange = (evt) => {
+        defaultTableAPI.change([workbook, sheet, col, row], evt)
+    };
 
-    let displayValue = ""
-    $: {
-        console.log("cell", cell)
-        if((cell.row !== row && row !== undefined) || (cell.col !== col && col !== undefined) || (cell.sheet !== sheet && col !== undefined) || (cell.workbook !== workbook && workbook !== undefined)) {
-            cellUnSubscription();
-            cell = new Cell({ row, col, sheet, workbook, allowUnsafe: true });
-            cellUnSubscription = cell.subscribe(onCellUpdate);
-            displayValue = typeof cell.value.value === 'symbol' ? cell.value.value.toString() : cell.value.value;
-        }
-    }
-    $: {
-        displayValue = typeof cell.value.value === 'symbol' ? cell.value.value.toString() : cell.value.value;
-    }
-    
-    onDestroy(cell.destroy);
+    onDestroy(cellUnSubscription);
 
     
 </script>
 
 <div class="cell">
-    <input class="formula" data-row={row} data-col={col} value={cell.formula || ""} on:change={cell.update}>
-    <input class="value" tabindex='-1' readonly data-row={row} data-col={col} value={displayValue} >
+    <input class="formula" data-row={row} data-col={col} value={formula || ""} on:change={onCellChange}>
+    <input class="value" tabindex='-1' readonly data-row={row} data-col={col} value={value || ""} >
 </div>
 
 <style type="text/scss">

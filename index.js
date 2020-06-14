@@ -35,6 +35,10 @@ import {
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     CC2Currency
   } from "./types";
 
@@ -76,6 +80,10 @@ export {
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     SyntaxError,
     parser as parse
 };
@@ -115,6 +123,10 @@ export default {
     HIDDEN,
     NATURALREF,
     CIRCULAR,
+    OPERATION,
+    R1C1PARTIAL,
+    FUNCTIONCALL,
+    RANGE,
     SyntaxError: parse.SyntaxError,
     parse:       parse.parse
 };
