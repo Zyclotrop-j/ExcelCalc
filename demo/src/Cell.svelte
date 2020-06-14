@@ -1,5 +1,5 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount, afterUpdate } from 'svelte';
     import { defaultTableAPI } from "../../util.js";
 
     export let col;
@@ -15,9 +15,16 @@
         formula = evt.formula;
     };
 
-    let cellUnSubscription = defaultTableAPI.registerCell([workbook, sheet, col, row], onCellUpdate);
-    let onCellChange = (evt) => {
-        defaultTableAPI.change([workbook, sheet, col, row], evt)
+    let cellUnSubscription;
+    $: {
+        if(cellUnSubscription) {
+            cellUnSubscription();
+        }
+        cellUnSubscription = defaultTableAPI.registerCell([workbook, sheet, row, col], onCellUpdate)
+    };
+    const onCellChange = evt => {
+        console.log("Change to ", workbook, sheet, row, col)
+        defaultTableAPI.change([workbook, sheet, row, col], evt)
     };
 
     onDestroy(cellUnSubscription);

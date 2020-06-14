@@ -1331,7 +1331,7 @@ const functions = {
     ADDRESS: ([{value:row_num},{value:column_num},{value:abs_num}={value:1},{value:a1}={value:true},{value:sheet_text}={}], _context) =>
         _context.parser(
             (sheet_text?"'"+sheet_text+"'!":"")+
-            (a1?
+            (a1? // todo: Doesn't work with column_nums > 25 (Z)
                 ((abs_num===1||abs_num===3)?"$":"")+String.fromCharCode(column_num+64)+((abs_num===1||abs_num===2)?"$":"")+row_num:
                 "R"+((abs_num===1||abs_num===2)?"["+row_num+"]":row_num)+"C"+((abs_num===1||abs_num===3)?"["+column_num+"]":column_num)
             )
@@ -1545,6 +1545,7 @@ const functions = {
         const { row, col } = meta;
         switch(info_type.toLowerCase()) {
             case "address":
+                // todo: doesn't work for rows > 25 (Z)
                 return { type: STRING, value: "$"+String.fromCharCode(64+row+1)+"$"+(col+1), meta: { CELL_FUNCTION: "address" } };
             case "col":
               return { type: NUMBER, value: col+1, meta: { CELL_FUNCTION: "col" } };

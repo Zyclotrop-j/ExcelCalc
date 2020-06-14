@@ -228,68 +228,73 @@ export class Table extends EventTarget {
 
 
   addRowBefore(rrow, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    const row = parseInt(rrow);
+    const row = parseInt(rrow); // difference to addRowAfter is here - todo: refactor
     const { byRow, byCol } = this._cells[workbook][sheet];
-    this.resize({ row: row - 1, workbook, sheet });
+    this.resize({ row, workbook, sheet });
     byRow.splice(row, 0, []);
     for(const col of byCol) {
       col.splice(row, 0, null);
     }
-    // todo: walk through and mark cells as dirty
-    byRow.slice(row+1).forEach((cell, idx) => {
-      cell.update({
-        row: idx + row + 1 // should be cell.row+1
-      });
+    for(const mvcell of byRow[row+1]) {
+      if(!mvcell) { // sparse - there might be a cell in there if it was previously created, or might just not
+        continue;
+      }
+      const celldata = { table: mvcell.table, row: mvcell.row, col: mvcell.col, allowUnsafe: mvcell.allowUnsafe, workbook: mvcell.workbook, sheet: mvcell.sheet };
+      const cell = new Cell(celldata); // auto-cached
+      this.dispatchEvent({ type: "init", value: "", formula: "", meta: celldata });
+    }
+    byRow.slice(row+1).flat().map((cell, idx) => {
+      cell.markDirty();
+      return [cell.update({
+        row: cell.row+1
+      }), cell];
+    }).forEach(([fn, cll]) => {
+      if(cll.dirty) { // if this has been run, don't run it again
+        fn();
+      }
     });
   }
 
   addRowAfter(rrow, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    const row = parseInt(rrow);
+    const row = parseInt(rrow)+1;
     const { byRow, byCol } = this._cells[workbook][sheet];
     this.resize({ row, workbook, sheet });
-    byRow.splice(row+1, 0, []);
+    byRow.splice(row, 0, []);
     for(const col of byCol) {
-      col.splice(row+1, 0, null);
+      col.splice(row, 0, null);
     }
-    byRow.slice(row).forEach((cell, idx) => {
-      cell.update({
-        row: idx + row // should be cell.row+1
-      });
+    for(const mvcell of byRow[row+1]) {
+      if(!mvcell) { // sparse - there might be a cell in there if it was previously created, or might just not
+        continue;
+      }
+      const celldata = { table: mvcell.table, row: mvcell.row, col: mvcell.col, allowUnsafe: mvcell.allowUnsafe, workbook: mvcell.workbook, sheet: mvcell.sheet };
+      const cell = new Cell(celldata); // auto-cached
+      this.dispatchEvent({ type: "init", value: "", formula: "", meta: celldata });
+    }
+    byRow.slice(row+1).flat().map((cell, idx) => {
+      cell.markDirty();
+      return [cell.update({
+        row: cell.row+1
+      }), cell];
+    }).forEach(([fn, cll]) => {
+      if(cll.dirty) { // if this has been run, don't run it again
+        fn();
+      }
     });
   }
 
   addColBefore(rcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    const col = parseInt(rcol);
-    const { byRow, byCol } = this._cells[workbook][sheet];
-    this.resize({ col: col - 1, workbook, sheet });
-    byCol.splice(col, 0, []);
-    for(const row of byRow) {
-      row.splice(col, 0, null);
-    }
-    byCol.slice(col+1).forEach((cell, idx) => {
-      cell.update({
-        col: idx + col + 1 // should be cell.row+1
-      });
-    });
+    // todo
   }
 
   addColAfter(rcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    const col = parseInt(rcol);
-    const { byRow, byCol } = this._cells[workbook][sheet];
-    this.resize({ col, workbook, sheet });
-    byCol.splice(col+1, 0, []);
-    for(const row of byRow) {
-      row.splice(col+1, 0, null);
-    }
-    byCol.slice(col).forEach((cell, idx) => {
-      cell.update({
-        col: idx + col // should be cell.row+1
-      });
-    });
+    // todo
   }
 
   // todo: delete col
-  //todo: delete row
+  // todo: delete row
+  // todo: rename sheet
+  // todo: rename workbook
 
 
   // todo:
@@ -333,6 +338,7 @@ export class Cell extends EventTarget {
     this.refresh = this.refresh.bind(this);
     this.onUpdate = this.onUpdate.bind(this);
     this.destroy = this.destroy.bind(this);
+    this.markDirty = this.markDirty.bind(this);
     this.allowUnsafe = allowUnsafe;
     this.subscribedCounter = 0;
     this.dirty = false;
@@ -348,7 +354,7 @@ export class Cell extends EventTarget {
       
   }
 
-  markDrity() {
+  markDirty() {
     this.dirty = true;
   }
 
@@ -357,7 +363,6 @@ export class Cell extends EventTarget {
   }
 
   update({
-    table,
     row,
     col,
     allowUnsafe,
@@ -370,16 +375,6 @@ export class Cell extends EventTarget {
       this.allowUnsafe = allowUnsafe;
       doUpdate = true;
     }
-    if(table && table !== this.table) {
-      this.onDestroy(); // de-register table event listener
-      this.table.cells.delete(this); // delete me from table
-      const cellsReferencingThisCell = this.table.cells.filter(findCell(this));
-      cellsReferencingThisCell.forEach(cell => cell.refresh());
-      this.table = table;
-      this.table.register(this);
-      this.onDestroy = this.table.addEventListener(CELL_ACTION, this.onTableChange);
-      doUpdate = true;
-    }
     
     const rewriteProperties = Object.entries({
       workbook,
@@ -388,30 +383,37 @@ export class Cell extends EventTarget {
       col
     }).filter((([name, value]) => value && value !== this[name]));
     if(rewriteProperties.length) {
-      // todo: instead of this, trace through the parser-reference and find actual references and replace them
-      // in that, write the reverse: tree-to-formula!
       const cellsReferencingThisCell = this.table.cells.filter(cell => 
         cell.references.some(({ workbook = this.workbook, sheet = this.sheet, row, col }) => 
+          // Note: References are in 1-index-based, cells are 0-index-based -> "row-1" and "col-1"
           this.workbook === workbook &&
           this.sheet === sheet &&
-          (row === "*" || this.row === row) &&
-          (col === "*" || this.col === col)
+          (row === "*" || this.row === row - 1) &&
+          (col === "*" || this.col === col - 1)
         )  
       );
       for(const cell of cellsReferencingThisCell) {
+        // cell references this and this is being updated
         for(const [name, newValue] of rewriteProperties) {
           cell.references.filter(({ workbook = this.workbook, sheet = this.sheet, row, col }) => 
             this.workbook === workbook &&
             this.sheet === sheet &&
-            (row === "*" || this.row === row) &&
-            (col === "*" || this.col === col)
+            (row === "*" || this.row === row - 1) &&
+            (col === "*" || this.col === col - 1)
           ).forEach(ref => { // re-write references to this cell
             ref[name] = ref[name] === "*" ? ref[name] : newValue;
           });
         }
         const before = cell.formula;
         cell.formula = this.reverse(cell, (cellReferenceExpression) => {
-          if(findCell(this)(cellReferenceExpression)) { // said cell might have multiple cell-references; only if this cell-referecne is the one we're looking at
+          const calcSheet = cellReferenceExpression.sheet || cell.sheet;
+          const calcWorkbook = cellReferenceExpression.sheet || cell.workbook;
+          const zeroBasedCol = cellReferenceExpression.col.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0) - 1;
+          const zeroBasedRow = cellReferenceExpression.row - 1;
+          if(calcWorkbook === this.workbook &&
+            calcSheet === this.sheet &&
+            zeroBasedCol === this.col &&
+            zeroBasedRow === this.row) { // said cell might have multiple cell-references; only if this cell-referecne is the one we're looking at
             const {
               col: v1,
               row: v2,
@@ -420,33 +422,37 @@ export class Cell extends EventTarget {
               workbook: wb,
               sheet: sh
             } = cellReferenceExpression;
+            console.log(col);
             return { // update or keep original if no update
               workbook: workbook || wb,
               sheet: sheet || sh,
-              row: row || v2,
-              col: col || v1,
+              row: row + 1 || v2,
+              // todo: use the following convert algorithm in the functions as well!
+              col: col != null ? Number(col).toString(26).split("").map((i, idx, arr) => String.fromCharCode(parseInt(i, 26)+64+(idx===arr.length-1))).join("") : v1,
             };
           }
           return cellReferenceExpression;
         });
+        console.log("Changed", before, "to", cell.formula);
         updates.push({ before, after: cell.formula, cell });
       }
       doUpdate = true;
     }
     this.workbook = workbook || this.workbook;
     this.sheet = sheet || this.sheet;
+    const oldRow = this.row, oldCol = this.col, oldWorkbook = this.workbook, oldSheet = this.sheet;
     this.row = row || this.row;
     this.col = col || this.col;
     const workbookname = this.workbook === DEFAULTWORKBOOK ? "" : `[${String(this.workbook)}]`;
     const sheetname = this.sheet === DEFAULTSHEET ? "" : `'${String(this.sheet)}'!`;
     this.name = name || `${workbookname}${sheetname}${String.fromCharCode(65+this.col)}${this.row+1}`; // eg A1
+    this.subscribedCounter = this.table.cells.find(this)?.subscribedCounter; // if there is an original cell, copy over it's subscription counter
 
     if(doUpdate) {
-      this._update();
-      return [updates, () => this._update()];
+      return this._update.bind(this);
     }
     
-    return [updates, () => updates];
+    return null;
   }
 
   onUpdate(e) {
@@ -461,41 +467,52 @@ export class Cell extends EventTarget {
   }
 
   _update(e = this.formula, { calledBy: cldby } = {}) {
+
+    const getCell = ({ row, col, workbook, sheet }) => {
+      const x = this.table.cells.find({ row, col, workbook, sheet });
+      if(x.dirty) {
+        const { value } = x._update();
+        return value;
+      }
+      return x.value;
+    };
+    const getCol = ({ col, workbook, sheet }) => {
+      this.table.cells
+      .filter(({ col: c, workbook: wb, sheet: sh }) => col === c && wb === workbook && sheet === sheet)
+      .map(({ dirty, value }) => {
+        if( dirty) {
+          const { value } = x._update();
+          return value;
+        }
+        return value;
+      });
+    };
+    const getRow = ({ row, workbook, sheet }) => {
+      this.table.cells
+      .filter(({ row: r, workbook: wb, sheet: sh }) => row === r && wb === workbook && sheet === sheet)
+      .map(({ dirty, value }) => {
+        if( dirty) {
+          const { value } = x._update();
+          return value;
+        }
+        return value;
+      });
+    };
+
     const cellFinder = {
-      getWorkbook: wb => {
-          return {
-              getSheet: sh => cellFinder.getSheet(sh, wb),
-          };
-      },
-      getSheet: (sh, mayBeWorkbook) => {
-            return {
-                getRow: (r, op) => {
-                  const x = cellFinder.getRow(r, op, mayBeWorkbook, sh);
-                  return x;
-                },
-                getCol: (c, op) => {
-                  const x = cellFinder.getCol(c, op, mayBeWorkbook, sh);
-                  return x;
-                },
-            };
-      },
-      getCell: ({ row, col }, { calledBy }, workbook = this.workbook, sheet = this.sheet) =>
-        this.table.cells.find(findCell({ row, col, workbook, sheet })).value,
-      getRow: (row, { calledBy }, workbook = this.workbook, sheet = this.sheet) => ({
-        getCol: (col, { calledBy }) =>
-          this.table.cells.find(findCell({ row, col, workbook, sheet })).value,
-        all: ({ calledBy }, { calledBy: cb2 } = {}) =>
-          this.table
-            .filter(({ row: r, workbook: wb, sheet: sh }) => row === r && wb === workbook && sheet === sheet)
-            .map(({ value }) => value),
+      getWorkbook: wb => ({ getSheet: sh => cellFinder.getSheet(sh, wb) }),
+      getSheet: (sh, mayBeWorkbook) => ({
+        getRow: (r, op) => cellFinder.getRow(r, op, mayBeWorkbook, sh),
+        getCol: (c, op) => cellFinder.getCol(c, op, mayBeWorkbook, sh),
       }),
-      getCol: (col, { calledBy }, workbook = this.workbook, sheet = this.sheet) => ({
-        getRow: (row, { calledBy }) =>
-          this.table.cells.find(findCell({ row, col, workbook, sheet })).value,
-        all: ({ calledBy }, { calledBy: cb2 } = {}) =>
-          this.table.cells
-            .filter(({ col: c, workbook: wb, sheet: sh }) => col === c && wb === workbook && sheet === sheet)
-            .map(({ value }) => value),
+      getCell: ({ row, col }, { calledBy }, workbook = this.workbook, sheet = this.sheet) => getCell({ row, col, workbook, sheet }, [calledBy]),
+      getRow: (row, { calledBy: cb1 }, workbook = this.workbook, sheet = this.sheet) => ({
+        getCol: (col, { calledBy }) => getCell({ row, col, workbook, sheet }, [calledBy, cb1]),
+        all: ({ calledBy }, { calledBy: cb2 } = {}) => getCol({ col, workbook, sheet }, [calledBy, cb2, cb1]),
+      }),
+      getCol: (col, { calledBy: cb1 }, workbook = this.workbook, sheet = this.sheet) => ({
+        getRow: (row, { calledBy }) => getCell({ row, col, workbook, sheet }, [calledBy, cb1]),
+        all: ({ calledBy }, { calledBy: cb2 } = {}) => getRow({ row, workbook, sheet }, [calledBy, cb2, cb1]),
       }),
     };
     const meta = {
@@ -524,7 +541,7 @@ export class Cell extends EventTarget {
         // todo: All dispatches
     }
     this.value = r;
-    console.log("R", r);
+    console.log("R", this.name, r, this);
     this.formula = e;
     this.references = (r && r[this.table.parser.CELL_TRACE] || []);
     this.dirty = false;
@@ -657,7 +674,8 @@ const globalTable = new Table();
 
 /*   TAGET INTERFACE   */
 export const subscriptionTypes = {
-  CHANGE: Symbol("SUBSCRIPTION_TYPE_CELL_CHANGE"),
+  CHANGE_EVT: "change",
+  INIT_EVT: "init",
 };
 
 class CellNameError extends Error {
@@ -732,16 +750,31 @@ const _createTable = ({
     table.addEventListener("change", ({ value, formula, meta }) => {
       debug({ value, formula, meta, type: "change" });
     });
+    table.addEventListener("init", ({ value, formula, meta }) => {
+      debug({ value, formula, meta, type: "init" });
+    });
   }
 
   const registerCell = (cellName, subscriber, { workbook: wb = DEFAULTWORKBOOK, sheet: sh = DEFAULTSHEET } = {}) => {
     const { row, col, sheet, workbook } = parseCellName(cellName, { workbook: wb, sheet: sh });
+    // create cell if it doesn't exist
     const cell = new Cell({ table, row, col, allowUnsafe: tableConfig.allowUnsafe, workbook, sheet }); // auto-cached
     cell.subscribedCounter++;
-    const unsub = cell.table.addEventListener("change", ({ value, formula, meta }) => {
+    const evt = {
+      type: "init",
+      value: cell.value,
+      formula: cell.formula,
+      meta: { row, col, workbook, sheet }
+    };
+    if(batchRunning) {
+      tmpCalls.push(() => subscriber(evt));
+    } else {
+      subscriber(evt);
+    }
+    const onEvt = t => ({ value, formula, meta }) => {
       if(row === meta.row && col === meta.col && sheet === meta.sheet && workbook === meta.workbook) {
         const evt = {
-          type: "change",
+          type: t,
           value,
           formula,
           meta
@@ -751,9 +784,12 @@ const _createTable = ({
         }
         subscriber(evt);
       }
-    });
+    };
+    const unsub1 = cell.table.addEventListener("change", onEvt("change"));
+    const unsub2 = cell.table.addEventListener("init", onEvt("init"));
     return () => {
-      unsub();
+      unsub1();
+      unsub2();
       cell.subscribedCounter--;
       if(destroyOnUnregisterInternal && cell.subscribedCounter === 0) {
         cell.destroy();
@@ -789,7 +825,7 @@ const _createTable = ({
     return cell && { value: cell.value, formula: cell.formula };
   }
 
-  const getRegisteredFields = () => table.cells.values().map(({ workbook, sheet, row, col, value, formula }) => ({ workbook, sheet, row, col, value, formula }));
+  const getRegisteredFields = () => table.cells.values().map(({ workbook, sheet, row, col, value, formula } = {}) => ({ workbook, sheet, row, col, value, formula }));
   const getState = () => {
     // todo: scan all table cells for errors
     return {
@@ -808,7 +844,7 @@ const _createTable = ({
   const change = (name, value, { workbook: wb = DEFAULTWORKBOOK, sheet: sh = DEFAULTSHEET } = {}) => {
     const { row, col, sheet, workbook } = parseCellName(name, { workbook: wb, sheet: sh });
     const cell = table.cells.find({ row, col, sheet, workbook });
-    console.log(cell, table, name, { row, col, sheet, workbook })
+    console.log(cell, table.cells, table)
     cell.onUpdate(value);
   }
 
@@ -831,11 +867,11 @@ const _createTable = ({
     getState, // fn() -> TableState
     registerCell, // fn(CellName, subscriber: CellState => void, { workbook?, sheet? }?) => Unsubscribe
     subscribe, // (subscriber: FormState => void) => Unsubscribe
-    resize: table.resize,
-    addRowAfter: table.addRowAfter,
-    addRowBefore: table.addRowBefore,
-    addColAfter: table.addColAfter,
-    addColBefore: table.addColBefore
+    resize: table.resize.bind(table),
+    addRowAfter: table.addRowAfter.bind(table),
+    addRowBefore: table.addRowBefore.bind(table),
+    addColAfter: table.addColAfter.bind(table),
+    addColBefore: table.addColBefore.bind(table)
   };
 
 
@@ -843,7 +879,7 @@ const _createTable = ({
 };
 
 export const createTable = arg => _createTable(arg);
-export const defaultTableAPI = _createTable({}, globalTable);
+export const defaultTableAPI = _createTable({ debug: console.log.bind(console) }, globalTable);
 
 // todo: expert a proxy to cell (or table?) instead of the whole thing
 // todo: expose differnt table interface

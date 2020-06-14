@@ -4,7 +4,7 @@
 	import { defaultTableAPI } from "../../util.js";
 
 	//const tableSize = { width: 26, height: 100 };
-	const tableSize = { width: 10, height: 10 };
+	const tableSize = { width: 10, height: 4 };
 
 	const makeTab = id => Symbol(`tab_${id}`);
 	export let items = [{ value: makeTab(1), label: "Tab1" }, { value: makeTab(2), label: "Tab2" }];
@@ -47,15 +47,22 @@
 
 	const addCellsBelow = () => {
 		console.log("addCellsBelow", menudata);
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.addRowAfter(menudata.row, { sheet });
 	};
 	const addCellsAbove = () => {
 		console.log("addCellsAbove", menudata);
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.addRowBefore(menudata.row, { sheet });
 		//tableSize.height = tableSize.height+1;
 	};
 	const deleteCells = () => {
 		console.log("deleteCells", menudata);
 		//tableSize.height = tableSize.height-1;
 	};
+
+    // addColAfter
+    // addColBefore
 
 </script>
 
@@ -93,7 +100,7 @@
 				<tr>
 					<th data-row="{b}" on:contextmenu|preventDefault={handleContextMenu}>{b+1}</th>
 					{#each Array(tableSize.width) as _, a}
-						<td>
+						<td data-row={b} data-col={a} >
 							<Cell col={a} row={b} sheet={items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label} />
 						</td>
 					{/each}
