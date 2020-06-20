@@ -76,7 +76,7 @@ class EventTarget {
 }
 
 export class Table extends EventTarget {
-  constructor({ parser = defaultParser } = { parser: defaultParser }) {
+  constructor({ parser = defaultParser, spillEnabled = true } = { parser: defaultParser, spillEnabled: true }) {
     super();
     this._cells = {
       [this.DEFAULTWORKBOOK]: {
@@ -86,6 +86,7 @@ export class Table extends EventTarget {
         }
       },
     };
+    this.spillEnabled = spillEnabled;
     this._cellSet = new Set();
     const that = this;
     this.cells = {
@@ -161,7 +162,7 @@ export class Table extends EventTarget {
         const { byRow, byCol } = that._cells[workbook][sheet];
         delete byRow[row][col];
         delete byCol[col][row];
-        return that._cellSet.delete(cell);;
+        return that._cellSet.delete(cell);
       },
       entries() {
         return that._cellSet.entries();
@@ -226,8 +227,55 @@ export class Table extends EventTarget {
     }
   }
 
+  _addCells(rowOrCol, addAfter) {
+    return (rawrowcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) => {
+      const rowcol = parseInt(rawrowcol) + (addAfter ? 1 : 0);
+      const { byRow, byCol } = this._cells[workbook][sheet];
+      let byX, byY, kind;
+      switch (rowOrCol) {
+        case "ROW":
+          kind = "row";
+          byX = byRow;
+          byY = byCol;
+          break;
+        case "COL":
+          kind = "col";
+          byX = byCol;
+          byY = byRow;
+          break;
+        default:
+          throw new Error(`rowOrCol must be either 'ROW' or 'COL'`);
+      }
+      this.resize({ [kind]: rowcol, workbook, sheet });
+      byX.splice(rowcol, 0, []);
+      for(const col of byY) {
+        col.splice(rowcol, 0, null);
+      }
+      for(const mvcell of byX[rowcol+1]) {
+        if(!mvcell) { // sparse - there might be a cell in there if it was previously created, or might just not
+          continue;
+        }
+        const celldata = { table: mvcell.table, row: mvcell.row, col: mvcell.col, allowUnsafe: mvcell.allowUnsafe, workbook: mvcell.workbook, sheet: mvcell.sheet };
+        const cell = new Cell(celldata); // auto-cached
+        this.dispatchEvent({ type: "init", value: "", formula: "", meta: celldata });
+      }
+      byX.slice(rowcol+1).flat().map((cell, idx) => {
+        cell.markDirty();
+        return [cell.update({
+          [kind]: cell[kind]+1
+        }), cell];
+      }).forEach(([fn, cll]) => {
+        if(cll.dirty) { // if this has been run already, don't run it again. This can happen if the cells had dependencies towards each other
+          fn();
+        }
+      });
+    };
+  }
 
-  addRowBefore(rrow, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
+
+  addRowBefore(raw, maybeWorkbookAndSheet) {
+    this._addCells("ROW", false)(raw, maybeWorkbookAndSheet);
+    /*
     const row = parseInt(rrow); // difference to addRowAfter is here - todo: refactor
     const { byRow, byCol } = this._cells[workbook][sheet];
     this.resize({ row, workbook, sheet });
@@ -253,9 +301,13 @@ export class Table extends EventTarget {
         fn();
       }
     });
+    */
   }
 
-  addRowAfter(rrow, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
+  addRowAfter(raw, maybeWorkbookAndSheet) {
+    this._addCells("ROW", true)(raw, maybeWorkbookAndSheet);
+
+    /*
     const row = parseInt(rrow)+1;
     const { byRow, byCol } = this._cells[workbook][sheet];
     this.resize({ row, workbook, sheet });
@@ -281,20 +333,167 @@ export class Table extends EventTarget {
         fn();
       }
     });
+    */
   }
 
-  addColBefore(rcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    // todo
+  addColBefore(raw, maybeWorkbookAndSheet) {
+    this._addCells("COL", false)(raw, maybeWorkbookAndSheet);
   }
 
-  addColAfter(rcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) {
-    // todo
+  addColAfter(raw, maybeWorkbookAndSheet) {
+    this._addCells("COL", true)(raw, maybeWorkbookAndSheet);
   }
 
-  // todo: delete col
-  // todo: delete row
-  // todo: rename sheet
-  // todo: rename workbook
+  _delete(rowOrCol) {
+    return (rawrowcol, { workbook = this.DEFAULTWORKBOOK, sheet = this.DEFAULTSHEET } = {}) => {
+      const rowcol = parseInt(rawrowcol);
+      if(Number.isNaN(rowcol) || !Number.isSafeInteger(rowcol) || !Number.isFinite(rowcol) || rowcol < 0) {
+        return false;
+      }
+      const { byRow, byCol } = this._cells[workbook][sheet];
+      let byX, byY, kind;
+      switch (rowOrCol) {
+        case "ROW":
+          kind = "row";
+          byX = byRow;
+          byY = byCol;
+          break;
+        case "COL":
+          kind = "col";
+          byX = byCol;
+          byY = byRow;
+          break;
+        default:
+          throw new Error(`rowOrCol must be either 'ROW' or 'COL'`);
+      }
+      const deleted = byX.splice(rowcol, 1);
+      for(const col of byY) {
+        col.splice(rowcol, 1);
+      }
+      for(const mvcell of deleted) {
+        if(!mvcell) { // sparse
+          continue;
+        }
+        const celldata = { table: mvcell.table, row: mvcell.row, col: mvcell.col, allowUnsafe: mvcell.allowUnsafe, workbook: mvcell.workbook, sheet: mvcell.sheet };
+        const cell = new Cell(celldata); // auto-cached
+        this._cellSet.delete(cell);
+        cell.onDestroy();
+        this.dispatchEvent({ type: "destroy", meta: celldata });
+      }
+      byX.slice(rowcol).flat().map((cell, idx) => {
+        cell.markDirty();
+        return [cell.update({
+          [kind]: cell[kind]-1
+        }), cell];
+      }).forEach(([fn, cll]) => {
+        if(cll.dirty) { // if this has been run already, don't run it again. This can happen if the cells had dependencies towards each other
+          fn();
+        }
+      });
+    }
+  }
+
+  deleteRow(raw, maybeWorkbookAndSheet) {
+    this._delete("ROW")(raw, maybeWorkbookAndSheet);
+  }
+
+  deleteCol(raw, maybeWorkbookAndSheet) {
+    this._delete("COL")(raw, maybeWorkbookAndSheet);
+  }
+
+  renameSheet(newSheet, { workbook = this.DEFAULTWORKBOOK, sheet} = {}) {
+    if(!newSheet) {
+      return false;
+    }
+    if(!sheet) {
+      return false;
+    }
+    if(newSheet === sheet) {
+      return false;
+    }
+    if(!this._cells[workbook].hasOwnProperty(sheet)) {
+      return false;
+    }
+    this._cells[workbook][newSheet] = this._cells[workbook][sheet];
+    this._cells[workbook][newSheet].byRow.flat().map((cell, idx) => {
+      if(!cell) {
+        return [null, { dirty: false }]; // non-existing cells are never dirty
+      }
+      cell.markDirty();
+      return [cell.update({
+        sheet: newSheet
+      }), cell];
+    }).forEach(([fn, cll]) => {
+      if(cll.dirty) { // if this has been run already, don't run it again. This can happen if the cells had dependencies towards each other
+        fn();
+      }
+    });
+    delete this._cells[workbook][sheet];
+  }
+
+  renameWorkbook(newWorkbook, { workbook } = {}) {
+    if(!newWorkbook) {
+      return false;
+    }
+    if(!workbook) {
+      return false;
+    }
+    if(newWorkbook === workbook) {
+      return false;
+    }
+    if(!this._cells.hasOwnProperty(workbook)) {
+      return false;
+    }
+    this._cells[newWorkbook] = this._cells[workbook];
+    this._cells[newWorkbook].map(sheet => sheet.byRow.flat().map((cell, idx) => {
+      if(!cell) {
+        return [null, { dirty: false }]; // non-existing cells are never dirty
+      }
+      cell.markDirty();
+      return [cell.update({
+        sheet: newSheet
+      }), cell];
+    })).forEach(ssheet => ssheet.forEach(([fn, cll]) => {
+      if(cll.dirty) { // if this has been run already, don't run it again. This can happen if the cells had dependencies towards each other
+        fn();
+      }
+    }));
+    delete this._cells[workbook];
+  }
+
+  deleteSheet({ workbook = this.DEFAULTWORKBOOK, sheet} = {}) {
+    if(!sheet) {
+      return false;
+    }
+    if(!this._cells[workbook].hasOwnProperty(sheet)) {
+      return false;
+    }
+    this._cells[workbook][sheet].byRow.flat().map((cell, idx) => {
+      if(!cell) { return; } // sparse
+      const celldata = { table: cell.table, row: cell.row, col: cell.col, allowUnsafe: cell.allowUnsafe, workbook: cell.workbook, sheet: cell.sheet };
+      this._cellSet.delete(cell);
+      cell.onDestroy();
+      this.dispatchEvent({ type: "destroy", meta: celldata });
+    });
+    delete this._cells[workbook][sheet];
+  }
+  
+  deleteWorkbook({ workbook } = {}) {
+    if(!workbook) {
+      return false;
+    }
+    if(!this._cells.hasOwnProperty(workbook)) {
+      return false;
+    }
+    this._cells[workbook].forEach(sh => sh.byRow.flat().map((cell, idx) => {
+      if(!cell) { return; } // sparse
+      const celldata = { table: cell.table, row: cell.row, col: cell.col, allowUnsafe: cell.allowUnsafe, workbook: cell.workbook, sheet: cell.sheet };
+      this._cellSet.delete(cell);
+      cell.onDestroy();
+      this.dispatchEvent({ type: "destroy", meta: celldata });
+    }));
+    delete this._cells[workbook];
+  }
 
 
   // todo:
@@ -343,8 +542,18 @@ export class Cell extends EventTarget {
     this.subscribedCounter = 0;
     this.dirty = false;
 
+    // todo: Implement
+    this.spilledValue = "";
+    this.spilledFormula = "";
+    this.spilledIndex = -1;
+
     this.table.register(this);
     this.onDestroy = this.table.addEventListener(CELL_ACTION, this.onTableChange);
+  }
+
+  isSplillable(byCell) {
+    // can spill into this cell, if there's no formula in here
+    return !this.formula;
   }
 
   destroy() {
@@ -407,13 +616,20 @@ export class Cell extends EventTarget {
         const before = cell.formula;
         cell.formula = this.reverse(cell, (cellReferenceExpression) => {
           const calcSheet = cellReferenceExpression.sheet || cell.sheet;
-          const calcWorkbook = cellReferenceExpression.sheet || cell.workbook;
+          const calcWorkbook = cellReferenceExpression.workbook || cell.workbook;
           const zeroBasedCol = cellReferenceExpression.col.split("").reduce((sum, char) => sum*26+char.charCodeAt(0)-64, 0) - 1;
           const zeroBasedRow = cellReferenceExpression.row - 1;
           if(calcWorkbook === this.workbook &&
             calcSheet === this.sheet &&
             zeroBasedCol === this.col &&
             zeroBasedRow === this.row) { // said cell might have multiple cell-references; only if this cell-referecne is the one we're looking at
+            const escapeSheet = shh => {
+              // todo: move all these escapes into the actual update function 'Cell.reverse'
+              if(shh.indexOf(' ') > -1) {
+                return `'${shh}'`;
+              }
+              return shh;
+            };
             const {
               col: v1,
               row: v2,
@@ -422,11 +638,10 @@ export class Cell extends EventTarget {
               workbook: wb,
               sheet: sh
             } = cellReferenceExpression;
-            console.log(col);
             return { // update or keep original if no update
               workbook: workbook || wb,
-              sheet: sheet || sh,
-              row: row + 1 || v2,
+              sheet: sheet != null ? escapeSheet(sheet) : sh,
+              row: row != null ? (row + 1) : v2,
               // todo: use the following convert algorithm in the functions as well!
               col: col != null ? Number(col).toString(26).split("").map((i, idx, arr) => String.fromCharCode(parseInt(i, 26)+64+(idx===arr.length-1))).join("") : v1,
             };
@@ -472,9 +687,9 @@ export class Cell extends EventTarget {
       const x = this.table.cells.find({ row, col, workbook, sheet });
       if(x.dirty) {
         const { value } = x._update();
-        return value;
+        return x.formula ? value : x.spilledValue;
       }
-      return x.value;
+      return x.formula ? x.value : x.spilledValue;
     };
     const getCol = ({ col, workbook, sheet }) => {
       this.table.cells
@@ -482,9 +697,9 @@ export class Cell extends EventTarget {
       .map(({ dirty, value }) => {
         if( dirty) {
           const { value } = x._update();
-          return value;
+          return x.formula ? value : x.spilledValue;
         }
-        return value;
+        return x.formula ? x.value : x.spilledValue;
       });
     };
     const getRow = ({ row, workbook, sheet }) => {
@@ -493,9 +708,9 @@ export class Cell extends EventTarget {
       .map(({ dirty, value }) => {
         if( dirty) {
           const { value } = x._update();
-          return value;
+          return x.formula ? value : x.spilledValue;
         }
-        return value;
+        return x.formula ? x.value : x.spilledValue;
       });
     };
 
@@ -552,6 +767,64 @@ export class Cell extends EventTarget {
     const update = { value: this.value, formula: this.formula };
     this._onUpdate.call(this, update, this);
     this.dispatchEvent({ type: "change", ...evtData });
+
+    // todo: Spill
+    /*
+    if(this.table.spillEnabled && (r.type === LIST || t.type === MATRIX)) {
+      try {
+        
+          const { width, height } = t.value.xy;
+          // todo: if LIST, detect direction
+          const cells = [];
+          for(let n = 1; n <= width; n++) {
+            for(let m = 1; m <= height; m++) {
+              const celldata = { row: this.row + n, col: this.col + m, sheet: this.sheet, workbook: this.workbook };
+              const circularRef = this.references.find(ref => {
+                this.table.cells.find({
+                  row: ref.row - 1,
+                  col: ref.col - 1,
+                  sheet: ref.sheet,
+                  workbook: ref.workbook
+                })?.references.some(({
+                  col, row, sheet, workbook
+                } = {}) => celldata.row === row-1 && celldata.col === col-1 && celldata.workbook === workbook && celldata.sheet === sheet);
+              });
+              if(circularRef) {
+                throw new SpillError(`Circular reference to spilled to cell at ${celldata.row} | ${celldata.col}`);
+              }
+              const cell = this.table.find(celldata);
+              if(!cell) {
+                cells.push(new Cell(celldata));
+                continue; // spillable
+              }
+              if(!cell.isSplillable()) {
+                throw new SpillError(`Cell ${cell.name} not spillable!`);
+              }
+              cells.push(cell);
+            }
+          }
+          while(cells) {
+            const cell = cells.pop(); // iterate over all cells
+            const value = r.value[cell.row - this.row][cell.col = this.col]; // todo: depending on List or Matrix this might be one or two-dim
+            const references = this.references;
+            cell.spilledValue = value;
+            cell.spilledFormula = this.formula;
+            cell.spilledIndex = [cell.row - this.row, cell.col = this.col];
+            cell.spilledToBy = this;
+            cell.references = this.references;
+            const evtData = { value, formula: `SPILL!${this.formula}[${cell.row - this.row}][${cell.col = this.col}]`,
+              meta: { workbook: cell.workbook, sheet: cell.sheet, row: cell.row, col: cell.col, cell: cell, calledBy: this.references } };
+            this.table.dispatchEvent({ type: CELL_ACTION, ...evtData });
+            this.table.dispatchEvent({ type: "change", ...evtData });
+          }
+      } catch(e) {
+        if(e instanceOf SpillError) {
+          // update own value to SpillError #SPILL
+        }
+      }
+    }
+    */
+
     return update;
   }
 
@@ -588,6 +861,7 @@ export class Cell extends EventTarget {
 
   onTableChange(evt) {
     if(evt.type === CELL_ACTION) {
+        // todo: if evt.calledBy includes this cell, don't update
         if(evt.meta.workbook === this.workbook && evt.meta.sheet === this.sheet && evt.meta.row === this.row && evt.meta.col === this.col) { // self
             return; // it is this cell, it changed alread, don't trigger the change again (otherwise infinite loop)
         }
@@ -599,7 +873,7 @@ export class Cell extends EventTarget {
           (col === "*" || (col-1) === evt.meta.col)
         )) { // Warning: references is in 1-based format!! // todo trace in parser and correct
             if(evt.value.value === this.table.parser.CIRCULAR) {
-                this.value = evt.value;
+                this.value = evt.value; // todo: we can't just make this circular, we actually need to calculate the value taking into account that one of the cell-values this formula uses is CIRCULAR-ERROR
                 return;
             }
             this.refresh({ calledBy: evt.meta.calledBy || [] });
@@ -649,6 +923,11 @@ export function formulaFromTree(xtree, mod = null, xparser = globalTable, oroot 
         workbook: wb,
         sheet: sh
       }) : {};
+      // todo: add all the escaping and converting here
+      // convert from numbers to letters for row/col
+      // escape sheet
+      // escape workbook
+      // escape workbook-sheet-combo
       // todo: v1 and v2 could be R1C1PARTIAL
       return `${a}${workbook || wb}${b}${sheet || sh}${c}${abs1}${col || v1}${abs2}${row || v2}`;
     case parser.RANGE:
@@ -739,7 +1018,7 @@ const _createTable = ({
   debug,
   destroyOnUnregister = false, // if true, destroy cell  value on unregister 
   initialValues, // type T
-  tableConfig = { parser: defaultParser, allowUnsafe: false } // global configuration options for the table
+  tableConfig = { parser: defaultParser, allowUnsafe: false, spillEnabled: true } // global configuration options for the table
 }, overwritetable) => {
   const table = overwritetable || new Table(tableConfig);
   let destroyOnUnregisterInternal = destroyOnUnregister;
@@ -833,6 +1112,7 @@ const _createTable = ({
       height: table.height,
       error: null,
       errors: [],
+      spillEnabled: table.spillEnabled
     };
   };
   const subscribe = (subscriber) => {
@@ -871,7 +1151,13 @@ const _createTable = ({
     addRowAfter: table.addRowAfter.bind(table),
     addRowBefore: table.addRowBefore.bind(table),
     addColAfter: table.addColAfter.bind(table),
-    addColBefore: table.addColBefore.bind(table)
+    addColBefore: table.addColBefore.bind(table),
+    deleteCol: table.deleteCol.bind(table),
+    deleteRow: table.deleteRow.bind(table),
+    renameSheet: table.renameSheet.bind(table),
+    renameWorkbook: table.renameWorkbook.bind(table),
+    deleteSheet: table.deleteSheet.bind(table),
+    deleteWorkbook: table.deleteWorkbook.bind(table),
   };
 
 

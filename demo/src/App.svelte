@@ -18,62 +18,93 @@
 		}
 	});
 	const handleClick = tabValue => () => (activeTabValue = tabValue);
+	const handleDblClick = tabValue => () => {
+		const tab = items.find(({ value }) => value === tabValue);
+		const newTabName = prompt("Enter a new name for the tab", tab.label);
+		if(!newTabName) {
+			return; // eg when the user clicked cancel, or just didn't type a new name in
+		}
+		renameSheet(tab.label, newTabName); // change all the things
+		tab.label = newTabName; // finally rename
+		items = items;
+	}
 
 	/* Right-click menu */
 	let menudata;
-	const toggleMenu = command => {
-		const menu = document.querySelector(".menu");
-		menu.style.display = command === "show" ? "block" : "none";
+	const showMenu = (which) => {
+		hideAllMenus();
+		const menu = document.querySelector(`.menu.${which}`);
+		menu.style.display = "block";
 	};
-	const setPosition = ({ top, left, data }) => {
-		const menu = document.querySelector(".menu");
-		menu.style.left = `${left}px`;
-		menu.style.top = `${top}px`;
-		menudata = data;
-		toggleMenu('show');
+	const hideAllMenus = () => {
+		const menus = document.querySelectorAll(".menu");
+		[...menus].forEach(menu => {
+			menu.style.display = "none";
+		});
 	};
-	const hideContextMenu = e => {
-		toggleMenu("hide");
-	};
-	const handleContextMenu = e => {
+	const handleContextMenu = which => e => {
 		const origin = {
 			left: e.pageX,
 			top: e.pageY,
 			data: e.target.dataset
 		};
-		setPosition(origin);
+		const menu = document.querySelector(`.menu.${which}`);
+		menu.style.left = `${origin.left}px`;
+		menu.style.top = `${origin.top}px`;
+		showMenu(which);
+		menudata = origin.data;
 		return false;
 	};
 
-	const addCellsBelow = () => {
+	const addRowBelow = () => {
 		console.log("addCellsBelow", menudata);
 		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
 		defaultTableAPI.addRowAfter(menudata.row, { sheet });
 	};
-	const addCellsAbove = () => {
+	const addRowAboveve = () => {
 		console.log("addCellsAbove", menudata);
 		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
 		defaultTableAPI.addRowBefore(menudata.row, { sheet });
 		//tableSize.height = tableSize.height+1;
 	};
-	const deleteCells = () => {
-		console.log("deleteCells", menudata);
-		//tableSize.height = tableSize.height-1;
+	const deleteRow = () => {
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.deleteRow(menudata.row, { sheet });
+	};
+	const addColBefore = () => {
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.addColBefore(menudata.col, { sheet });
+	};
+	const addColAfter = () => {
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.addColAfter(menudata.col, { sheet });
+	};
+	const deleteCol = () => {
+		const sheet = items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label;
+		defaultTableAPI.deleteCol(menudata.col, { sheet });
 	};
 
-    // addColAfter
-    // addColBefore
+	const renameSheet = (oldName, newName) => {
+		defaultTableAPI.renameSheet(newName, { sheet: oldName });
+	};
 
 </script>
 
 
-<svelte:window on:click={hideContextMenu} />
+<svelte:window on:click={hideAllMenus} />
 
-<div class="menu">
+<div class="menu row">
   <ul class="menu-options">
-    <li on:click={addCellsBelow} class="menu-option">Add below</li>
-    <li on:click={addCellsAbove} class="menu-option">Add above</li>
-    <li on:click={deleteCells} class="menu-option">Delete</li>
+    <li on:click={addRowBelow} class="menu-option">Add row below</li>
+    <li on:click={addRowAboveve} class="menu-option">Add row above</li>
+    <li on:click={deleteRow} class="menu-option">Delete row</li>
+  </ul>
+</div>
+<div class="menu col">
+  <ul class="menu-options">
+    <li on:click={addColBefore} class="menu-option">Add col to the left</li>
+    <li on:click={addColAfter} class="menu-option">Add col to the right</li>
+    <li on:click={deleteCol} class="menu-option">Delete col</li>
   </ul>
 </div>
 
@@ -82,7 +113,8 @@
 	<ul class="tabs">
 	{#each items as item}
 		<li class={activeTabValue === item.value ? 'active' : ''}>
-			<span on:click={handleClick(item.value)}>{item.label}</span>
+			<span on:dblclick|preventDefault={handleDblClick(item.value)} on:click={handleClick(item.value)}>{item.label}</span>
+
 		</li>
 	{/each}
 	</ul>
@@ -91,14 +123,14 @@
 			<tr>
 				<th></th>
 				{#each Array(tableSize.width) as _, a}
-					<th data-col="{a}">{String.fromCharCode(a+65)}</th>
+					<th data-col="{a}" on:contextmenu|preventDefault={handleContextMenu("col")}>{String.fromCharCode(a+65)}</th>
 				{/each}
 			</tr>
 		</thead>
 		<tbody>
 			{#each Array(tableSize.height) as _, b}
 				<tr>
-					<th data-row="{b}" on:contextmenu|preventDefault={handleContextMenu}>{b+1}</th>
+					<th data-row="{b}" on:contextmenu|preventDefault={handleContextMenu("row")}>{b+1}</th>
 					{#each Array(tableSize.width) as _, a}
 						<td data-row={b} data-col={a} >
 							<Cell col={a} row={b} sheet={items.find(({ value }) => value === activeTabValue) && items.find(({ value }) => value === activeTabValue).label} />
@@ -170,7 +202,7 @@
 	}
 
 	.menu {
-		width: 120px;
+		width: 160px;
 		box-shadow: 0 4px 5px 3px rgba(0, 0, 0, 0.2);
 		position: absolute;
 		display: none;
@@ -179,7 +211,8 @@
 
 		.menu-options {
 			list-style: none;
-			padding: 10px 0;
+			padding: 0px;
+			margin: 0px;
 
 			.menu-option {
 				font-weight: 500;

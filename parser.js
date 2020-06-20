@@ -3494,7 +3494,7 @@ function peg$parse(input, options) {
       const functions = functionDefinitions;
       // dynamic, from the outside
       let xcontext = options._context;
-      let currentcell = options._currentcell;
+      let currentcell = options._currentcell || {};
       let calledBy = options._calledBy || [];
       let parser = options._self;
       const allowUnsafe = options.allowUnsafe || false;
