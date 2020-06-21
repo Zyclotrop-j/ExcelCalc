@@ -172,7 +172,347 @@ describe("Formula parsing", () => {
     expect(arg3.value).toBe("Hello");
     expect(arg4.value).toBe(true);
   });
+  test(`Passes on arguments to function calls`, () => {
+    jest.clearAllMocks();
+    const result = parse(`=SUM(SUM(SUM(1)))+SUM(1)`);
+    expect(result.type).toBe(parser.NUMBER);
+    expect(result.value).toBe(2);
+    expect(functions.SUM).toHaveBeenCalledTimes(4);
+  });
+  test(`parses Lists`, () => {
+    const result = parse(`={1,2,3}`);
+    expect(result.type).toBe(parser.LIST);
+    expect(result.value).toBeInstanceOf(Array);
+    expect(result.value[0].value).toBe(1);
+    expect(result.value[1].value).toBe(2);
+    expect(result.value[2].value).toBe(3);
+  });
+  test(`parses Arrays`, () => {
+    const result = parse(`={1,2,3;4,5,6}`);
+    expect(result.type).toBe(parser.MATRIX);
+    expect(result.value).toBeInstanceOf(Array);
+    expect(result.value[0][0].value).toBe(1);
+    expect(result.value[0][1].value).toBe(2);
+    expect(result.value[0][2].value).toBe(3);
+    expect(result.value[1][0].value).toBe(4);
+    expect(result.value[1][1].value).toBe(5);
+    expect(result.value[1][2].value).toBe(6);
+  });
+});
+
+describe(`ignores whitespace`, () => {
+  test("parses '=  1 '", () => {
+    const result = parse(`=  1 `);
+    expect(result.type).toBe(parser.NUMBER);
+    expect(result.value).toBe(1);
+  });
+  test(`parses '=  " 1"  '`, () => {
+    const result = parse(`=  " 1"  `);
+    expect(result.type).toBe(parser.STRING);
+    expect(result.value).toBe(" 1");
+  });
+  test(`parses '=     "Hello"    '`, () => {
+    const result = parse(`=    "Hello"    `);
+    expect(result.type).toBe(parser.STRING);
+    expect(result.value).toBe("Hello");
+  });
+  test(`parses '= SUM(    )'`, () => {
+    jest.clearAllMocks();
+    const result = parse(`= SUM(    )`);
+    expect(result.type).toBe(parser.NUMBER);
+    expect(result.value).toBe(1);
+    expect(functions.SUM).toHaveBeenCalled();
+    expect(functions.SUM).toHaveBeenCalledTimes(1);
+  });
+  test(`parses Lists`, () => {
+    const result = parse(`= { 1 ,2   ,   3   }`);
+    expect(result.type).toBe(parser.LIST);
+    expect(result.value).toBeInstanceOf(Array);
+    expect(result.value[0].value).toBe(1);
+    expect(result.value[1].value).toBe(2);
+    expect(result.value[2].value).toBe(3);
+  });
+  test(`parses Arrays`, () => {
+    const result = parse(`={1 ,2  ,3 ; 4  , 5,   6}   `);
+    expect(result.type).toBe(parser.MATRIX);
+    expect(result.value).toBeInstanceOf(Array);
+    expect(result.value[0][0].value).toBe(1);
+    expect(result.value[0][1].value).toBe(2);
+    expect(result.value[0][2].value).toBe(3);
+    expect(result.value[1][0].value).toBe(4);
+    expect(result.value[1][1].value).toBe(5);
+    expect(result.value[1][2].value).toBe(6);
+  });
+  test(`parses '  TRUE  '`, () => {
+    // While unintuative, excel actually parses it like that!
+    const result = parse(`   TRUE   `);
+    expect(result.type).toBe(parser.STRING);
+    expect(result.value).toBe(`   TRUE   `);
+  });
+});
+
+describe(`parses operations`, () => {
   
+
+  const testcases = [
+    {
+      "desc": "Addition",
+      "result": 2,
+      "formula": "=1+1"
+    },
+    {
+      "desc": "String of Number + Int",
+      "result": 2,
+      "formula": "=\"1\"+1"
+    },
+    {
+      "desc": "Int + String of Number",
+      "result": 2,
+      "formula": "=1+\"1\""
+    },
+    {
+      "desc": "String + Int",
+      "result": parser.VVALUE,
+      "formula": "=\"Hello\"+1"
+    },
+    {
+      "desc": "String with number + Int",
+      "result": parser.VVALUE,
+      "formula": "=\"1H\"+1"
+    },
+    {
+      "desc": "Addition",
+      "result": 6,
+      "formula": "=3+3"
+    },
+    {
+      "desc": "Subtraction",
+      "result": 2,
+      "formula": "=3-1"
+    },
+    {
+      "desc": "Negation",
+      "result": -1,
+      "formula": "=-1"
+    },
+    {
+      "desc": "Multiplication",
+      "result": 9,
+      "formula": "=3*3"
+    },
+    {
+      "desc": "Division",
+      "result": 1,
+      "formula": "=3/3"
+    },
+    {
+      "desc": "Percent",
+      "result": 0.2,
+      "formula": "=20%"
+    },
+    {
+      "desc": "Exponentiation",
+      "result": 27,
+      "formula": "=3^3"
+    },
+    {
+      "desc": "Equal to",
+      "result": false,
+      "formula": "=1=2"
+    },
+    {
+      "desc": "Greater than",
+      "result": false,
+      "formula": "=1>2"
+    },
+    {
+      "desc": "Less than",
+      "result": true,
+      "formula": "=1<2"
+    },
+    {
+      "desc": "Greater than or equal to",
+      "result": false,
+      "formula": "=1>=2"
+    },
+    {
+      "desc": "Less than or equal to",
+      "result": true,
+      "formula": "=1<=2"
+    },
+    {
+      "desc": "Not equal to",
+      "result": true,
+      "formula": "=1<>2"
+    },
+    {
+      "desc": "Connects, or concatenates, two values to produce one continuous text value.",
+      "result": "Northwind",
+      "formula": `="North"&"wind"`
+    },
+    {
+      "desc": "–",
+      "result": -1,
+      "formula": "=2*-1 + 1"
+    },
+    {
+      "desc": "",
+      "result": 3,
+      "formula": "=1--1*2"
+    },
+    {
+      "desc": "",
+      "result": -6,
+      "formula": "=-3+-3"
+    },
+    {
+      "desc": "%",
+      "result": 2.2,
+      "formula": "=1+20%+1"
+    },
+    {
+      "desc": "%",
+      "result": 1.21,
+      "formula": "=(1+20)%+1"
+    },
+    {
+      "desc": "^",
+      "result": 48,
+      "formula": "=3*4^2"
+    },
+    {
+      "desc": "^",
+      "result": 144,
+      "formula": "=(3*4)^2"
+    },
+    {
+      "desc": "* and /",
+      "result": 12,
+      "formula": "=3+3*3"
+    },
+    {
+      "desc": "* and /",
+      "result": 7,
+      "formula": "=12-10/2"
+    },
+    {
+      "desc": "* and /",
+      "result": 18,
+      "formula": "=(3+3)*3"
+    },
+    {
+      "desc": "* and /",
+      "result": 1,
+      "formula": "=(12-10)/2"
+    },
+    {
+      "desc": "+ and –",
+      "result": "125",
+      "formula": "=7+5&5"
+    },
+    {
+      "desc": "+ and –",
+      "result": 62,
+      "formula": "=7+(5&5)"
+    },
+    {
+      "desc": "+ and –",
+      "result": "25",
+      "formula": "=7-5&5"
+    },
+    {
+      "desc": "+ and –",
+      "result": -48,
+      "formula": "=7-(5&5)"
+    },
+    {
+      "desc": "&",
+      "result": false,
+      "formula": "=1=1&5"
+    },
+    {
+      "desc": "",
+      "result": "TRUE5",
+      "formula": "=(1=1)&5"
+    },
+    {
+      "desc": "=",
+      "result": true,
+      "formula": "=1=1<>FALSE"
+    },
+    {
+      "desc": "=",
+      "result": false,
+      "formula": "=1=(1<>FALSE)"
+    },
+    {
+      "desc": ">",
+      "result": true,
+      "formula": "=5>1<>FALSE"
+    },
+    {
+      "desc": ">",
+      "result": false,
+      "formula": "=5>(1<>FALSE)"
+    },
+    {
+      "desc": "<",
+      "result": false,
+      "formula": "=FALSE<>1+1<5"
+    },
+    {
+      "desc": "<",
+      "result": true,
+      "formula": "=(FALSE<>1)+1<5"
+    },
+    {
+      "desc": "<=",
+      "result": false,
+      "formula": "=FALSE<>1+1<=5"
+    },
+    {
+      "desc": "<=",
+      "result": true,
+      "formula": "=(FALSE<>1)+1<=5"
+    },
+    {
+      "desc": ">=",
+      "result": true,
+      "formula": "=5>=1<>FALSE"
+    },
+    {
+      "desc": ">=",
+      "result": false,
+      "formula": "=5>=(1<>FALSE)"
+    },
+    {
+      "desc": "<>",
+      "result": false,
+      "formula": "=1<>0<=5"
+    },
+    {
+      "desc": "<>",
+      "result": true,
+      "formula": "=1<>(0<=5)"
+    },
+    {
+      "desc": "<>",
+      "result": -1,
+      "formula": "=-(1<>2)"
+    },
+    {
+      "desc": "<>",
+      "result": true,
+      "formula": "=-1<>2"
+    }
+  ];
+  testcases.forEach(({ desc, result: r, formula }) => {
+    test(`${desc} ('${formula}' = ${String(r)})`, () => {
+      const result = parse(formula);
+      expect(result.value).toBe(r);
+    });
+  });
+
 });
 
 

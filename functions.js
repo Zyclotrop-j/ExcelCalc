@@ -2288,6 +2288,7 @@ const functions = {
         return { type: NUMBER, value: a+b*t, meta: { m:b, b:a } };
     }, 
     FORMULATEXT: ([{type:t1,meta:{type},formula,value}]) => {
+        // todo: use reverse parser!
         if(type === CELL) {
             return { type: (formula ? STRING : ERROR), value: (formula || NAVALUE)  };
         }

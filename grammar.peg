@@ -5,9 +5,33 @@
 
 {
 
-    const typeOrError = (type, e) => (t) => {
+    const typeOrError = (type, e, conversionToType) => (t) => {
         if(t.value === "") {
             return t;
+        }
+        if(conversionToType === STRING && t.type === NUMBER) {
+            return Object.assign(t, {
+                type: STRING,
+                value: `${t.value}`
+            });
+        }
+        if(conversionToType === STRING && t.type === BOOLEAN) {
+            return Object.assign(t, {
+                type: STRING,
+                value: t.value ? "TRUE" : "FALSE"
+            });
+        }
+        if(conversionToType === NUMBER && t.type === BOOLEAN) {
+            return Object.assign(t, {
+                type: NUMBER,
+                value: t.value ? 1 : 0
+            });
+        }
+        if(conversionToType === NUMBER && t.type === STRING && t.value && /^[ \t\n\r]*[0-9]*(\.[0-9]*)?[ \t\n\r]*$/.test(t.value)) {
+            return Object.assign(t, {
+                type: NUMBER,
+                value: parseFloat(t.value)
+            });
         }
         return (type === t.type || t.type === ERROR) ? t : { type: ERROR, value: e || VVALUE, meta: t, [CELL_TRACE]: t[CELL_TRACE], tree: t.tree };
     };
@@ -231,26 +255,56 @@ String = .+
 Expression
   = head:YExpression tail:(_ ("=" / "<>" / "<=" / ">=" / "<" / ">") _ YExpression)* {
       return tail.reduce(function(result, element) {
-        if (element[1] === "=") { return stdop(result, element[3], (x,y)=>x==y, BOOLEAN, "==") }
-        if (element[1] === "<") { return stdop(result, element[3], (x,y)=>x<y, BOOLEAN, "<") }
-        if (element[1] === ">") { return stdop(result, element[3], (x,y)=>x>y, BOOLEAN, ">") }
-        if (element[1] === "<=") { return stdop(result, element[3], (x,y)=>x<=y, BOOLEAN, "<=") }
-        if (element[1] === ">=") { return stdop(result, element[3], (x,y)=>x>=y, BOOLEAN, ">=") }
-        if (element[1] === "<>") { return stdop(result, element[3], (x,y)=>x!=y, BOOLEAN, "<>") }
+          // we have lots of special cases for booleans (Excel handels these differently to js)
+        if (element[1] === "=") { return stdop(result, element[3], (x,y)=>{
+            return x===y;
+        }, BOOLEAN, "=") }
+        if (element[1] === "<") { return stdop(result, element[3], (x,y)=>{
+            if(x === true) { return false; }
+            if(x === false) { return y === true; }
+            if(y === true) { return true; }
+            if(y === false) { return x !== true; }
+            return x<y;
+        }, BOOLEAN, "<") }
+        if (element[1] === ">") { return stdop(result, element[3], (x,y)=>{
+            if(x === true) { return y !== true; }
+            if(x === false) { return y !== true && y !== false; }
+            if(y === true) { return x === true; }
+            if(y === false) { return !(x !== true && x !== false); }
+            return x>y;
+        }, BOOLEAN, ">") }
+        if (element[1] === "<=") { return stdop(result, element[3], (x,y)=>{
+            if(x === true) { return y === true; }
+            if(x === false) { return y === true && y === false; }
+            if(y === true) { return x !== true; }
+            if(y === false) { return !(x === true && x === false); }
+            return x<=y;
+        }, BOOLEAN, "<=") }
+        if (element[1] === ">=") { return stdop(result, element[3], (x,y)=>{
+            if(x === true) { return true; }
+            if(x === false) { return y !== true; }
+            if(y === true) { return false; }
+            if(y === false) { return x === true }
+            return x>=y;
+        }, BOOLEAN, ">=") }
+        if (element[1] === "<>") { return stdop(result, element[3], (x,y)=>{
+            return x!==y;
+        }, BOOLEAN, "<>") }
       }, head);
     }
 
 YExpression
   = head:XExpression tail:(_ "&" _ XExpression)* {
       return tail.reduce(function(result, element) {
-        if (element[1] === "&") { return stdop(result, element[3], (x,y)=>""+x+y, STRING, "&") }
+        const checkType = typeOrError(STRING, undefined, STRING);
+        if (element[1] === "&") { return stdop(checkType(result), checkType(element[3]), (x,y)=>`${x}${y}`, STRING, "&") }
       }, head);
     }
 
 XExpression
   = head:XTerm tail:(_ ("+" / "-") _ XTerm)* {
       return tail.reduce(function(result, element) {
-        const checkType = typeOrError(NUMBER);
+        const checkType = typeOrError(NUMBER, undefined, NUMBER);
         if (element[1] === "+") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)+(y||0), NUMBER, "+") }
         if (element[1] === "-") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)-(y||0), NUMBER, "-") }
       }, head);
@@ -259,17 +313,17 @@ XExpression
 XTerm
   = head:Term tail:(_ ("*" / "/") _ Term)* {
       return tail.reduce(function(result, element) {
-        const checkType = typeOrError(NUMBER);
+        const checkType = typeOrError(NUMBER, undefined, NUMBER);
         if (element[1] === "*") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)*(y||0), NUMBER, "*") }
         if (element[1] === "/") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)/(y||0), NUMBER, "/") }
       }, head);
     }
 
 Term
-  = head:Factor tail:(_ "^" _ Factor)* {
+  = head:Percent tail:(_ "^" _ Percent)* {
       return tail.reduce(function(result, element) {
         if (element[1] === "^") {
-            const checkType = typeOrError(NUMBER);
+            const checkType = typeOrError(NUMBER, undefined, NUMBER);
         	const v = stdop(checkType(result), checkType(element[3]), (x,y)=>Math.pow((x||0),y), NUMBER, "^");
             if(element[3].value === 0 || element[3].value === "" || !element[3].value) {
                 return Object.assign(v, { type: ERROR, value: NUMVALUE }); // overwrite with error
@@ -279,7 +333,37 @@ Term
       }, head);
     }
 
-List = "{" inner:InnerList rows:(";" x:InnerList { return x; })* "}" {
+Percent
+  = head:Negative isPercent:(_ "%")? {
+      if(!isPercent) {
+          return head;
+      }
+      const checkType = typeOrError(NUMBER, undefined, NUMBER);
+      const headInNumber = checkType(head);
+      const tree = { type: OPERATION, value: [head, "%"] };
+      const meta = { left: head, [CELL_TRACE]: head[CELL_TRACE] };
+      if(headInNumber.type === ERROR) {
+          return { ...head, ...headInNumber, meta, tree, [CELL_TRACE]: head[CELL_TRACE] }
+      }
+      return { ...head, tree, type: NUMBER, value: headInNumber.value * 0.01, meta, [CELL_TRACE]: head[CELL_TRACE] }
+    }
+
+Negative
+  = isNegative:("-" _)? head:Factor {
+      if(!isNegative) {
+          return head;
+      }
+      const checkType = typeOrError(NUMBER, undefined, NUMBER);
+      const headInNumber = checkType(head);
+      const tree = { type: OPERATION, value: ["-", head] };
+      const meta = { left: head, [CELL_TRACE]: head[CELL_TRACE] };
+      if(headInNumber.type === ERROR) {
+          return { ...head, ...headInNumber, meta, tree, [CELL_TRACE]: head[CELL_TRACE] }
+      }
+      return { ...head, tree, type: NUMBER, value: headInNumber.value * -1, meta, [CELL_TRACE]: head[CELL_TRACE] }
+    }
+
+List = _ "{" inner:InnerList rows:(";" x:InnerList { return x; })* "}" _ {
     const Cell_Trace = inner.map(i => i[CELL_TRACE] || []);
     if(!rows.length) {
         return { type: LIST, tree: { type: LIST, value: inner.reduce((p, i) => [...p, i, ","], []) }, value: inner, meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
@@ -288,7 +372,7 @@ List = "{" inner:InnerList rows:(";" x:InnerList { return x; })* "}" {
     return { type: MATRIX, tree: { type: MATRIX, value: treevalue }, value: [inner, ...rows], meta: { type: INLINE }, [CELL_TRACE]: [].concat(...Cell_Trace) };
 }
 
-InnerList = member:(True / False / Str / Num)? members:("," x:(True / False / Str / Num) {return x;})* { return [member || { type: NULL }, ...members]; }
+InnerList = _ member:(True / False / Str / Num)? _ members:("," _ x:(True / False / Str / Num) _ {return x;})* { return [member || { type: NULL }, ...members]; }
 
 Factor
   = "(" _ expr:Expression _ ")" { return { ...expr, [CELL_TRACE]: expr[CELL_TRACE], tree: { type: OPERATION, value: ["(", expr.tree, ")"] } }; }
@@ -412,7 +496,7 @@ FiniteRangeR1C1
 IdentifyFunction = _ "(" arg0:Arg args:(_ "," _ t:(y:Arg { return y; } / "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" _ { return { type: ARGUMENTS, value: [arg0, ...args], tree: { type: ARGUMENTS, value: [arg0, ...args.reduce((p, i) => [...p, ",", i], [])] } } }
 
 Function
-	= name:([a-zA-Z][a-zA-Z0-9.]* { return text() }) _ "(" arg0:Arg? args:(_ "," _ t:(y:Arg { return y; } / "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" {
+	= _ name:([a-zA-Z][a-zA-Z0-9.]* { return text() }) _ "(" _ arg0:Arg? args:(_ "," _ t:(y:Arg { return y; } / _ "" { return { type: NULL, value: undefined } }) _ { return t; })* ")" {
     const allargs = [arg0, ...args].map(i => i || { type: NULL, [CELL_TRACE]: [] });
     const cellTrace = allargs.reduce((p, i) => p.concat(i[CELL_TRACE] || []), []);
     const argumenttree = [arg0 || "", ...args.reduce((p, i) => [...p, ",", i || ""], [])];
@@ -605,7 +689,12 @@ Str
 Num "number"
   = _ num:Number _ { return num; }
 
-Number = sign:("+" / "-" / "") int:([0-9]+) dec:("." [0-9]+)? percent:"%"? { return { type: NUMBER, value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10), tree: [sign, int.join(""), dec ? "." : "", dec ? dec.join("").substring(1) : "", percent || ""] }; }
+Number = sign:("+" / "-" / "") int:([0-9]+) dec:("." [0-9]+)? percent:"%"? { 
+    return { 
+        type: NUMBER, 
+        value: (percent === "%" ? 0.01 : 1) * parseFloat(text(), 10), 
+        tree: [sign, int.join(""), dec ? "." : "", dec ? dec.join("").substring(1) : "", percent || ""] 
+    }; }
 
 _ "whitespace"
   = [ \t\n\r]*
