@@ -1327,6 +1327,18 @@ balanced-match@^1.0.0:
   resolved "https://registry.yarnpkg.com/balanced-match/-/balanced-match-1.0.0.tgz#89b4d199ab2bee49de164ea02b89ce462d71b767"
   integrity sha1-ibTRmasr7kneFk6gK4nORi1xt2c=
 
+barecolor@1.0.1:
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/barecolor/-/barecolor-1.0.1.tgz#1bbbbfc41cedecf74e23fb7d9d054cd8763d92cc"
+  integrity sha512-ncJ680U+r1CGBt73L3O6V9GIAPy3hbDmWODEQajwEnDmmzeStvc4UYhapUSxUpS76+MHxyRihzZfwhyl122Zdw==
+
+baretest@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/baretest/-/baretest-2.0.0.tgz#5791667b47329c452e1f9bade879ab8dc0b304ba"
+  integrity sha512-hRmYnBojeijT3jH0GtqLoHus+adPoeYh2NmcNT3wBPH903AUphcFqs1gJ64fBovDXql51Df24g9D9jcXRZd4vA==
+  dependencies:
+    barecolor "1.0.1"
+
 base@^0.11.1:
   version "0.11.2"
   resolved "https://registry.yarnpkg.com/base/-/base-0.11.2.tgz#7bde5ced145b6d551a90db87f83c558b4eb48a8f"

@@ -1,4 +1,4 @@
-import parse from "./parser";
+import parse from "./parser.js";
 import {
     CELL,
     STR_ESCAPED,
@@ -40,7 +40,7 @@ import {
     FUNCTIONCALL,
     RANGE,
     CC2Currency
-  } from "./types";
+  } from "./types.js";
 
 const SyntaxError = parse.SyntaxError;
 const parser = parse.parse; 

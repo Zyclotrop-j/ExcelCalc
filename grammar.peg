@@ -2,12 +2,62 @@
 // ==========================
 //
 // Accepts expressions like "=2 * (3 + 4)" or "=SUM(A2,27)" and computes their value.
+// Partial spec
+// https://support.microsoft.com/en-us/office/calculation-operators-and-precedence-in-excel-48be406d-4975-4d31-b2b8-7af9e0e2878a
+// https://support.microsoft.com/en-us/office/data-types-in-data-models-e2388f62-6122-4e2b-bcad-053e3da9ba90
+// http://dmcritchie.mvps.org/excel/sorting.htm
 
 {
-
+    // const excelAlphabeticalOrder = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "'", "-", " ", "!", "\"", "#", "$", "%", "&", "(", ")", "*", ",", ".", "/", ":", ";", "?", "@", "[", "", "]", "^", "_", "`", "{", "|", "}", "~", "+", "<", "=", ">", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+    const mayBeComp = (() => {
+        return undefined;
+        if(typeof Intl === "undefined" || typeof Intl.Collator === "undefined") {
+            return undefined;
+        }
+        const _intlcoll = new Intl.Collator(undefined, { sensitivity: "base", numeric: false });
+        const compare = _intlcoll.compare.bind(_intlcoll);
+        return compare;
+    })();
+    const compare = mayBeComp || ((x, y) => {
+        if (x.toLowerCase() === y.toLowerCase()) {
+            return 0;
+        }
+        return x.toLowerCase() > y.toLowerCase() ? 1 : -1;
+        /*
+        const a = ca.toUpperCase();
+        const b = cb.toUpperCase();
+        for(let idx = 0; idx < a.length; idx++) {
+            if(idx >= b.length) {
+                return 1;
+            }
+            const idxA = excelAlphabeticalOrder.indexOf(a[idx]), idxB= excelAlphabeticalOrder.indexOf(b[idx]);
+            const diff = idxA - idxB;
+            if(diff !== 0) {
+                return diff;
+            }
+        }
+        return b.length > a.length ? -1 : 0;
+        */
+    });
+    
     const typeOrError = (type, e, conversionToType) => (t) => {
-        if(t.value === "") {
+        if(t.value === "" && t.type === NULL) {
             return t;
+        }
+        if(t.type === LIST) {
+            // maybe use Object.getOwnPropertySymbols;
+            return {
+                [CELL_TRACE]: t[CELL_TRACE],
+                ...t,
+                value: t.value.map(typeOrError(type, e, conversionToType))
+            };
+        }
+        if(t.type === MATRIX) {
+            return {
+                [CELL_TRACE]: t[CELL_TRACE],
+                ...t,
+                value: t.value.map(v => v.map(typeOrError(type, e, conversionToType)))
+            }
         }
         if(conversionToType === STRING && t.type === NUMBER) {
             return Object.assign(t, {
@@ -27,7 +77,7 @@
                 value: t.value ? 1 : 0
             });
         }
-        if(conversionToType === NUMBER && t.type === STRING && t.value && /^[ \t\n\r]*[0-9]*(\.[0-9]*)?[ \t\n\r]*$/.test(t.value)) {
+        if(conversionToType === NUMBER && t.type === STRING && t.value && t.value.trim() && /^[ \t\n\r]*-?[0-9]*(\.[0-9]*)?[ \t\n\r]*$/.test(t.value)) {
             return Object.assign(t, {
                 type: NUMBER,
                 value: parseFloat(t.value)
@@ -35,7 +85,14 @@
         }
         return (type === t.type || t.type === ERROR) ? t : { type: ERROR, value: e || VVALUE, meta: t, [CELL_TRACE]: t[CELL_TRACE], tree: t.tree };
     };
-    const stdop = (a,b,op,returntype,operation) => {
+    const stdop = (a,b,unsafeop,returntype,operation) => {
+        const op = (...args) => {
+            try {
+                return { value: unsafeop(...args) };
+            } catch(e) {
+                return { value: e, type: ERROR };
+            }
+        };
     	const {value:left,type:tleft,meta:{type:lstype}={}} = a;
         const {value:right,type:tright,meta:{type:rstype}={}} = b;
         const tree = { type: OPERATION, value: [a,operation,b] };
@@ -61,37 +118,11 @@
             right: b.meta||{},
             operation
         };
-        if(tleft === LIST && tright === NUMBER) {
-            return { type: LIST, tree, value: left.map(({
-                value,
-                meta:m = {},
-                ...rest
-            }, idx) => ({
-                ...rest,
-                type: returntype,
-                value: op(value,right),
-                meta: Object.assign(meta,{item: m,idx}),
-                [CELL_TRACE]: Cell_Trace
-            })) }
-        }
-        if(tleft === NUMBER && tright === LIST) {
-            return { type: LIST, tree, value: right.map(({
-                value,
-                meta:m = {},
-                ...rest
-            },idx) => ({
-                ...rest,
-                type: returntype,
-                value: op(left,value),
-                meta: Object.assign(meta,{item: m,idx}),
-                [CELL_TRACE]: Cell_Trace
-            })) }
-        }
         if(tleft === LIST && tright === LIST) {
             return {
                 type: LIST,
                 tree,
-                value: left.map(({value,...rest},idx) => ({
+                value: left.map(({value,type,...rest},idx) => ({
                     ...rest,
                     ...right[idx],
                     meta: {
@@ -103,13 +134,41 @@
                         idx,
                     },
                     type: returntype,
-                    value: op(value,right[idx].value),
+                    ...op(value,right[idx].value,type,right[idx].type),
                     [CELL_TRACE]: Cell_Trace
                 }))
             }
             // todo: Maybe distiguish by natural vs inline list?
         }
-        return { ...a, ...b, tree, type: returntype, value: op(left,right), meta, [CELL_TRACE]: Cell_Trace };
+        if(tleft === LIST) {
+            return { type: LIST, tree, value: left.map(({
+                value,
+                meta:m = {},
+                type,
+                ...rest
+            }, idx) => ({
+                ...rest,
+                type: returntype,
+                ...op(value,right,type,tright),
+                meta: Object.assign(meta,{item: m,idx}),
+                [CELL_TRACE]: Cell_Trace
+            })) }
+        }
+        if(tright === LIST) {
+            return { type: LIST, tree, value: right.map(({
+                value,
+                meta:m = {},
+                type,
+                ...rest
+            },idx) => ({
+                ...rest,
+                type: returntype,
+                ...op(left,value,tleft,type),
+                meta: Object.assign(meta,{item: m,idx}),
+                [CELL_TRACE]: Cell_Trace
+            })) }
+        }
+        return { ...a, ...b, tree, type: returntype, ...op(left,right,tleft,tright), meta, [CELL_TRACE]: Cell_Trace };
     };
     
     const functions = functionDefinitions;
@@ -254,40 +313,76 @@ String = .+
 
 Expression
   = head:YExpression tail:(_ ("=" / "<>" / "<=" / ">=" / "<" / ">") _ YExpression)* {
+      /*
+      https://support.microsoft.com/en-us/office/data-types-in-data-models-e2388f62-6122-4e2b-bcad-053e3da9ba90
+      In comparison expressions Boolean values are considered greater than string values and string values are considered 
+      greater than numeric or date/time values; numbers and date/time values are considered to have the same rank. 
+      No implicit conversions are performed for Boolean or string values; 
+      BLANK or a blank value is converted to 0/""/false depending on the data type of the other compared value.
+      */
+      const rank = [[NUMBER, DATE, TIME, DATETIME], [STRING], [BOOLEAN]];
+      const nullConversions = { NUMBER: 0, DATE: 0, TIME: 0, STRING: "", BOOLEAN: false };
       return tail.reduce(function(result, element) {
-          // we have lots of special cases for booleans (Excel handels these differently to js)
+
+
+
+        // we have lots of special cases for booleans (Excel handels these differently to js)
         if (element[1] === "=") { return stdop(result, element[3], (x,y)=>{
             return x===y;
         }, BOOLEAN, "=") }
-        if (element[1] === "<") { return stdop(result, element[3], (x,y)=>{
-            if(x === true) { return false; }
-            if(x === false) { return y === true; }
-            if(y === true) { return true; }
-            if(y === false) { return x !== true; }
-            return x<y;
+        if (element[1] === "<") { return stdop(result, element[3], (x,y,tx,ty)=>{
+            if(tx !== ty) {
+                if(tx === NULL) { return nullConversions[ty] < x; }
+                if(ty === NULL) { return nullConversions[tx] < y; }
+                const r1 = rank.findIndex(rk => rk.includes(tx));
+                const r2 = rank.findIndex(rk => rk.includes(ty));
+                if(r1 === -1 || r2 === -1) {
+                    throw new Error(`Unknown comparison between ${String(tx)} and ${String(ty)}! Check the implementation!`);
+                }
+                return r1 < r2;
+            }
+            return tx === STRING && ty === STRING ? compare(x, y) < 0 : x < y;
         }, BOOLEAN, "<") }
-        if (element[1] === ">") { return stdop(result, element[3], (x,y)=>{
-            if(x === true) { return y !== true; }
-            if(x === false) { return y !== true && y !== false; }
-            if(y === true) { return x === true; }
-            if(y === false) { return !(x !== true && x !== false); }
-            return x>y;
+        if (element[1] === ">") { return stdop(result, element[3], (x,y,tx,ty)=>{
+            if(tx !== ty) {
+                if(tx === NULL) { return nullConversions[ty] > x; }
+                if(ty === NULL) { return nullConversions[tx] > y; }
+                const r1 = rank.findIndex(rk => rk.includes(tx));
+                const r2 = rank.findIndex(rk => rk.includes(ty));
+                if(r1 === -1 || r2 === -1) {
+                    throw new Error(`Unknown comparison between ${String(tx)} and ${String(ty)}! Check the implementation!`);
+                }
+                return r1 > r2;
+            }
+            return tx === STRING && ty === STRING ? compare(x, y) > 0 : x > y;
         }, BOOLEAN, ">") }
-        if (element[1] === "<=") { return stdop(result, element[3], (x,y)=>{
-            if(x === true) { return y === true; }
-            if(x === false) { return y === true && y === false; }
-            if(y === true) { return x !== true; }
-            if(y === false) { return !(x === true && x === false); }
-            return x<=y;
+        if (element[1] === "<=") { return stdop(result, element[3], (x,y,tx,ty)=>{
+            if(tx !== ty) {
+                if(tx === NULL) { return nullConversions[ty] <= x; }
+                if(ty === NULL) { return nullConversions[tx] <= y; }
+                const r1 = rank.findIndex(rk => rk.includes(tx));
+                const r2 = rank.findIndex(rk => rk.includes(ty));
+                if(r1 === -1 || r2 === -1) {
+                    throw new Error(`Unknown comparison between ${String(tx)} and ${String(ty)}! Check the implementation!`);
+                }
+                return r1 < r2;
+            }
+            return tx === STRING && ty === STRING ? compare(x, y) <= 0 : x <= y;
         }, BOOLEAN, "<=") }
-        if (element[1] === ">=") { return stdop(result, element[3], (x,y)=>{
-            if(x === true) { return true; }
-            if(x === false) { return y !== true; }
-            if(y === true) { return false; }
-            if(y === false) { return x === true }
-            return x>=y;
+        if (element[1] === ">=") { return stdop(result, element[3], (x,y,tx,ty)=>{
+            if(tx !== ty) {
+                if(tx === NULL) { return nullConversions[ty] >= x; }
+                if(ty === NULL) { return nullConversions[tx] >= y; }
+                const r1 = rank.findIndex(rk => rk.includes(tx));
+                const r2 = rank.findIndex(rk => rk.includes(ty));
+                if(r1 === -1 || r2 === -1) {
+                    throw new Error(`Unknown comparison between ${String(tx)} and ${String(ty)}! Check the implementation!`);
+                }
+                return r1 > r2;
+            }
+            return tx === STRING && ty === STRING ? compare(x, y) >= 0 : x >= y;
         }, BOOLEAN, ">=") }
-        if (element[1] === "<>") { return stdop(result, element[3], (x,y)=>{
+        if (element[1] === "<>") { return stdop(result, element[3], (x,y,tx,ty)=>{
             return x!==y;
         }, BOOLEAN, "<>") }
       }, head);
@@ -315,7 +410,12 @@ XTerm
       return tail.reduce(function(result, element) {
         const checkType = typeOrError(NUMBER, undefined, NUMBER);
         if (element[1] === "*") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)*(y||0), NUMBER, "*") }
-        if (element[1] === "/") { return stdop(checkType(result), checkType(element[3]), (x,y)=>(x||0)/(y||0), NUMBER, "/") }
+        if (element[1] === "/") { return stdop(checkType(result), checkType(element[3]), (x,y)=>{
+            if(y === 0) {
+                throw DIV0;
+            }
+            return (x||0)/(y||0);
+        }, NUMBER, "/") }
       }, head);
     }
 
@@ -324,10 +424,15 @@ Term
       return tail.reduce(function(result, element) {
         if (element[1] === "^") {
             const checkType = typeOrError(NUMBER, undefined, NUMBER);
-        	const v = stdop(checkType(result), checkType(element[3]), (x,y)=>Math.pow((x||0),y), NUMBER, "^");
-            if(element[3].value === 0 || element[3].value === "" || !element[3].value) {
-                return Object.assign(v, { type: ERROR, value: NUMVALUE }); // overwrite with error
-            }
+        	const v = stdop(checkType(result), checkType(element[3]), (x,y)=>{
+                if(x === 0 && y === 0) {
+                    throw NUMVALUE;
+                }
+                if(x === 0 && y < 0) {
+                    throw DIV0;
+                }
+                return Math.pow((x||0),y);
+            }, NUMBER, "^");
             return v;
         }
       }, head);
@@ -349,18 +454,38 @@ Percent
     }
 
 Negative
-  = isNegative:("-" _)? head:Factor {
+  = isNegative:(("-" / "+") _)? head:Factor {
       if(!isNegative) {
+          return head;
+      }
+      const [sign] = isNegative;
+      if(sign === "+") {
+          // weirdness in excel: the "+"-operator does not cast, while the "-"-operator does
           return head;
       }
       const checkType = typeOrError(NUMBER, undefined, NUMBER);
       const headInNumber = checkType(head);
-      const tree = { type: OPERATION, value: ["-", head] };
+      
+      const tree = { type: OPERATION, value: [sign, head] };
       const meta = { left: head, [CELL_TRACE]: head[CELL_TRACE] };
       if(headInNumber.type === ERROR) {
           return { ...head, ...headInNumber, meta, tree, [CELL_TRACE]: head[CELL_TRACE] }
       }
-      return { ...head, tree, type: NUMBER, value: headInNumber.value * -1, meta, [CELL_TRACE]: head[CELL_TRACE] }
+      if(headInNumber.type === LIST) {
+          const listValue = headInNumber.value.map(({ value, ...rest }) => ({
+              ...rest,
+              value: value * -1
+          }));
+          return { ...head, tree, type: headInNumber.type || NUMBER, value: listValue , meta, [CELL_TRACE]: head[CELL_TRACE] }
+      }
+      if(headInNumber.type === MATRIX) {
+          const listValue = headInNumber.value.map(entry => entry.map(({ value, ...rest }) => ({
+              ...rest,
+              value: value * -1
+          })));
+          return { ...head, tree, type: headInNumber.type || NUMBER, value: listValue , meta, [CELL_TRACE]: head[CELL_TRACE] }
+      }
+      return { ...head, tree, type: headInNumber.type || NUMBER, value: headInNumber.value * -1, meta, [CELL_TRACE]: head[CELL_TRACE] }
     }
 
 List = _ "{" inner:InnerList rows:(";" x:InnerList { return x; })* "}" _ {

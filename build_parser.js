@@ -1,5 +1,5 @@
-const fs = require("fs");
-const peg = require("pegjs");
+import fs from "fs";
+import peg from "pegjs";
 
 const grammar = fs.readFileSync('./grammar.peg', 'utf8');
 
@@ -48,8 +48,8 @@ const typedefs = `{
 
 const parserSource = peg.generate(grammar, {
     dependencies: {
-        [typedefs]: "./types",
-        "functionDefinitions": "./functions"
+        [typedefs]: "./types.js",
+        "functionDefinitions": "./functions.js"
     },
     format: "es",
     output: "source"

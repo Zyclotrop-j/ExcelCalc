@@ -35,7 +35,7 @@ import {
     NATURALREF,
     CIRCULAR,
     CC2Currency,
-  } from "./types";
+  } from "./types.js";
 
   const BESSEL = {
     /* todo: get from https://github.com/SheetJS/bessel */
