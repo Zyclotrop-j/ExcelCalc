@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "pegjs": "node build_parser.js",
-    "test": "jest",
+    "test": "node ./baretest && jest",
     "test-dev": "jest --watch"
   },
   "repository": {
